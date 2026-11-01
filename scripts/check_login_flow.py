@@ -11,7 +11,9 @@ from sqlalchemy import text
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.db.session import get_engine  # noqa: E402
+from app.core.security import COOKIE_NAME  # noqa: E402
 from app.main import app  # noqa: E402
+from app.repositories import auth_redis_repository  # noqa: E402
 from app.services import email_service  # noqa: E402
 
 
@@ -21,6 +23,7 @@ def main() -> None:
     original_sender = email_service.send_login_email
     previous_key = os.environ.get("APP_RESEND_API_KEY")
     previous_from = os.environ.get("APP_RESEND_FROM")
+    token: str | None = None
     email_service.send_login_email = lambda _email, code: sent_codes.append(code)
     os.environ["APP_RESEND_API_KEY"] = "test-key"
     os.environ["APP_RESEND_FROM"] = "test@example.test"
@@ -45,6 +48,8 @@ def main() -> None:
             assert logged_in.status_code == 200, logged_in.text
             assert logged_in.json()["data"]["user"]["email"] == email
             assert "HttpOnly" in logged_in.headers["set-cookie"]
+            token = client.cookies.get(COOKIE_NAME)
+            assert token and auth_redis_repository.get_session_user_id(token) is not None
 
             current = client.get("/api/user/get/login")
             assert current.status_code == 200 and current.json()["data"]["email"] == email
@@ -52,9 +57,14 @@ def main() -> None:
             logged_out = client.post("/api/user/logout")
             assert logged_out.status_code == 200 and logged_out.json()["data"] is True
             assert client.get("/api/user/get/login").status_code == 401
+            assert client.get("/api/user/get/login", headers={"cookie": f"{COOKIE_NAME}={token}"}).status_code == 401
+            assert auth_redis_repository.get_session_user_id(token) is None
 
         print("login flow OK: send, cooldown, invalid code, login, cookie probe, logout")
     finally:
+        if token:
+            auth_redis_repository.revoke_web_session(token)
+        auth_redis_repository.get_redis().delete(*auth_redis_repository._email_keys(email))
         email_service.send_login_email = original_sender
         if previous_key is None:
             os.environ.pop("APP_RESEND_API_KEY", None)
@@ -65,10 +75,6 @@ def main() -> None:
         else:
             os.environ["APP_RESEND_FROM"] = previous_from
         with get_engine().begin() as connection:
-            connection.execute(
-                text("DELETE FROM backend_data.email_login_codes WHERE email = :email"),
-                {"email": email},
-            )
             connection.execute(
                 text("DELETE FROM backend_data.users WHERE email = :email"),
                 {"email": email},

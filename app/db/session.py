@@ -1,6 +1,5 @@
 """Connection and transaction setup for the local PostgreSQL database."""
 
-import os
 from contextlib import contextmanager
 from functools import lru_cache
 from typing import Iterator
@@ -9,16 +8,19 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, URL
 from sqlalchemy.orm import Session
 
+from app.core.config import database_settings
+
 
 @lru_cache(maxsize=1)
 def get_engine() -> Engine:
-    # psycopg reads PGPASSWORD from the process environment via libpq.
+    settings = database_settings()
     url = URL.create(
         "postgresql+psycopg",
-        username=os.getenv("DECKWISE_DB_USER", "postgres"),
-        host=os.getenv("DECKWISE_DB_HOST", "127.0.0.1"),
-        port=int(os.getenv("DECKWISE_DB_PORT", "5432")),
-        database=os.getenv("DECKWISE_DB_NAME", "deckwise_python_dev"),
+        username=settings.user,
+        password=settings.password,
+        host=settings.host,
+        port=settings.port,
+        database=settings.name,
     )
     return create_engine(url, pool_pre_ping=True)
 

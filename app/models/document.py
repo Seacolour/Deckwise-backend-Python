@@ -1,4 +1,4 @@
-"""The Markdown document row; its API and repository follow in the next slice."""
+"""Markdown document row and its optimistic-lock version."""
 
 from datetime import datetime
 
@@ -17,8 +17,12 @@ class Document(Base):
     title: Mapped[str] = mapped_column(Text)
     document_type: Mapped[str] = mapped_column(Text)
     summary: Mapped[str | None] = mapped_column(Text)
+    current_file_id: Mapped[int | None] = mapped_column(BigInteger)
     draft_content: Mapped[str | None] = mapped_column(Text)
+    draft_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer)
+    created_by: Mapped[int | None] = mapped_column(BigInteger)
+    updated_by: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     is_deleted: Mapped[bool] = mapped_column(Boolean)

@@ -9,6 +9,7 @@
 
     <properties>
         <deckwise.jdbc.url>jdbc:postgresql://127.0.0.1:5432/deckwise_python_dev</deckwise.jdbc.url>
+        <deckwise.jdbc.user>postgres</deckwise.jdbc.user>
     </properties>
 
     <build>
@@ -31,7 +32,7 @@
                 </dependencies>
                 <configuration>
                     <url>${deckwise.jdbc.url}</url>
-                    <user>postgres</user>
+                    <user>${deckwise.jdbc.user}</user>
                     <password>${env.PGPASSWORD}</password>
                     <locations>
                         <location>filesystem:${project.basedir}/migration</location>
