@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>local.deckwise</groupId>
+    <artifactId>deckwise-python-schema</artifactId>
+    <version>0.1.0</version>
+
+    <properties>
+        <deckwise.jdbc.url>jdbc:postgresql://127.0.0.1:5432/deckwise_python_dev</deckwise.jdbc.url>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <version>11.14.1</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-database-postgresql</artifactId>
+                        <version>11.14.1</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.postgresql</groupId>
+                        <artifactId>postgresql</artifactId>
+                        <version>42.7.8</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <url>${deckwise.jdbc.url}</url>
+                    <user>postgres</user>
+                    <password>${env.PGPASSWORD}</password>
+                    <locations>
+                        <location>filesystem:${project.basedir}/migration</location>
+                    </locations>
+                    <schemas>
+                        <schema>backend_data</schema>
+                    </schemas>
+                    <createSchemas>true</createSchemas>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
