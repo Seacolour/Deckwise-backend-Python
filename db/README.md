@@ -6,4 +6,6 @@ Login codes and Web sessions live in Redis. User accounts and login records rema
 
 The optional LangGraph PostgreSQL checkpointer uses tables in the database's `public` schema. `AsyncPostgresSaver.setup()` manages those tables independently of Flyway when the experiment is enabled.
 
+The file-upload learning path reuses the existing `object_storage_files`, `project_file_links`, and `file_text_fragments` tables from V3. It requires no new migration.
+
 Do not edit applied Flyway migrations. Once the Python feature set is stable, remove unused tables with forward migrations and build a separate clean baseline for fresh installations if needed.

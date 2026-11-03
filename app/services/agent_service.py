@@ -15,7 +15,7 @@ from app.core.exceptions import BusinessError
 from app.db.session import session_scope
 from app.db.checkpoint import checkpoint_thread_id
 from app.schemas.agent import UserMessageSendRequest
-from app.services import document_service, model_service, session_service
+from app.services import document_service, file_service, model_service, session_service
 
 logger = logging.getLogger("uvicorn.error")
 _active_runs: dict[tuple[int, int], asyncio.Event] = {}
@@ -48,8 +48,8 @@ async def start_turn(
     message = body.message.strip()
     if not message:
         raise BusinessError(400, ErrorCode.PARAMS_ERROR, "消息不能为空")
-    if body.fileCacheKeys or body.imageCacheKeys:
-        raise BusinessError(400, ErrorCode.PARAMS_ERROR, "文件附件暂未接入当前 Agent")
+    if body.imageCacheKeys:
+        raise BusinessError(400, ErrorCode.PARAMS_ERROR, "图片附件暂未接入当前 Agent")
 
     model = model_service.resolve_chat_model(body.model)
     key = (user_id, session_id)
@@ -59,6 +59,8 @@ async def start_turn(
     with session_scope() as db:
         session = session_service.require_owned_session(db, user_id, session_id)
         project_id = session.project_id
+    for cache_key in body.fileCacheKeys:
+        file_service.require_project_file(user_id, project_id, cache_key)
     context = body.clientContext
     active_document_id = context.activeDocument.documentId if context and context.activeDocument else None
     referenced_document_ids = context.referencedDocumentIds if context else []
@@ -104,7 +106,8 @@ async def start_turn(
         try:
             async for chunk in graph.astream(
                 {"messages": messages, "active_document_id": active_document_id,
-                 "referenced_document_ids": referenced_document_ids, "tool_rounds": 0},
+                 "referenced_document_ids": referenced_document_ids,
+                 "attached_file_keys": body.fileCacheKeys, "tool_rounds": 0},
                 stream_mode=["messages", "updates"], version="v2",
                 config=graph_config,
             ):

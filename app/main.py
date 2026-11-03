@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.v1 import agent, auth, documents, models, projects, users
+from app.api.v1 import agent, auth, documents, files, models, projects, users
 from app.core.exceptions import (
     BusinessError,
     handle_business_error,
@@ -48,6 +48,7 @@ app.include_router(projects.router)
 app.include_router(documents.router)
 app.include_router(models.router)
 app.include_router(agent.router)
+app.include_router(files.router)
 
 
 @app.get("/")

@@ -25,8 +25,8 @@ class UserMessageSendRequest(BaseModel):
     mode: Literal["ASK", "AGENT"] = "ASK"
     model: str = Field(min_length=1, max_length=120)
     clientContext: UserMessageClientContext | None = None
-    fileCacheKeys: list[str] = Field(default_factory=list)
-    imageCacheKeys: list[str] = Field(default_factory=list)
+    fileCacheKeys: list[str] = Field(default_factory=list, max_length=5)
+    imageCacheKeys: list[str] = Field(default_factory=list, max_length=5)
 
 
 class SessionMessageDTO(BaseModel):

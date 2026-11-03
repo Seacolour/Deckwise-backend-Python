@@ -22,7 +22,8 @@ def make_file_list_tool(user_id: int, project_id: int) -> BaseTool:
                 for item in documents
             ],
             "files": [
-                {"file_id": item.id, "name": item.fileName, "document_id": item.documentId}
+                {"file_id": item.id, "cache_key": item.cacheKey,
+                 "name": item.fileName, "document_id": item.documentId}
                 for item in files
             ],
         }, ensure_ascii=False)

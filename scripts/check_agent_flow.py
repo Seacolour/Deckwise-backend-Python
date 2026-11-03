@@ -124,15 +124,16 @@ def main() -> None:
             assert client.get(f"/api/documents/{document_id}", headers=headers).json()["data"]["version"] == 2
             assert client.post(f"/api/sessions/{session_id}/abort", headers=headers, json={}).status_code == 200
             scoped_tools = tools_for_project(user_id, int(project_id), "AGENT")
+            read_tool = next(tool for tool in scoped_tools if tool.name == "document_read")
             other_project = client.post("/api/projects/create", json={"name": "其他项目"}, headers=headers)
             other_project_id = other_project.json()["data"]["id"]
             other_document = client.post("/api/documents/create", headers=headers, json={
                 "projectId": other_project_id, "title": "隔离文档", "draftContent": "不能跨项目读取",
             })
             other_document_id = other_document.json()["data"]["id"]
-            denied = json.loads(scoped_tools[1].invoke({"document_id": int(other_document_id)}))
+            denied = json.loads(read_tool.invoke({"document_id": int(other_document_id)}))
             assert denied["success"] is False
-            read = json.loads(scoped_tools[1].invoke({"document_id": int(document_id)}))
+            read = json.loads(read_tool.invoke({"document_id": int(document_id)}))
             assert read["success"] and read["version"] == 2
             external = client.put(f"/api/documents/{document_id}/draft", headers=headers,
                                   json={"version": 2, "draftContent": "外部更新"})

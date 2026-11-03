@@ -33,6 +33,25 @@ class DatabaseSettings:
     password: str | None = field(repr=False)
 
 
+@dataclass(frozen=True)
+class R2PrivateSettings:
+    account_id: str
+    access_key: str = field(repr=False)
+    secret_key: str = field(repr=False)
+    bucket: str
+    path_prefix: str
+
+
+def r2_private_settings() -> R2PrivateSettings:
+    return R2PrivateSettings(
+        account_id=(setting("R2_ACCOUNT_ID") or "").strip(),
+        access_key=(setting("R2_ACCESS_KEY") or "").strip(),
+        secret_key=(setting("R2_SECRET_KEY") or "").strip(),
+        bucket=(setting("R2_PRIVATE_BUCKET") or "").strip(),
+        path_prefix=(setting("R2_PRIVATE_PATH_PREFIX", "workbench/private") or "").strip("/"),
+    )
+
+
 def database_settings() -> DatabaseSettings:
     return DatabaseSettings(
         host=setting("DECKWISE_DB_HOST", "127.0.0.1") or "127.0.0.1",

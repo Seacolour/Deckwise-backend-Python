@@ -19,7 +19,10 @@ def make_context_node(user_id: int, project_id: int) -> Callable:
     def load_context(state: AgentState) -> dict:
         document_id = state.get("active_document_id")
         referenced = state.get("referenced_document_ids") or []
+        attached_files = state.get("attached_file_keys") or []
         references_note = f" 用户另外引用了文档 ID：{referenced}。" if referenced else ""
+        if attached_files:
+            references_note += f" 本轮附加文件 cache_key：{attached_files}。请用 file_content_read 分段读取。"
         if document_id is None:
             return {"context_note": "当前没有选中的文档。可以先用 file_list 找到项目内文档。" + references_note}
         document = document_service.get_document(
@@ -50,6 +53,7 @@ def make_model_node(model: BaseChatModel, tools: Sequence[BaseTool], mode: str) 
             )
         else:
             instruction += "当前是问答模式，只读取资料并回答，不修改文档。"
+        instruction += "对于用户附加的文件，应调用 file_content_read 按需读取文本分片，不要假设文件内容已进入上下文。"
         instruction += "\n" + state.get("context_note", "")
         response = await bound_model.ainvoke([SystemMessage(content=instruction), *state["messages"]])
         return {"messages": [response]}

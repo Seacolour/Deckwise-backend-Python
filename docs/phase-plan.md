@@ -54,12 +54,16 @@
 
 从 Web 选择模型，向 Agent 发出一个文档修改请求；界面能看到流式结果，文档实际更新，刷新后对话及文档状态仍可回读。Agent 遇到无权限或版本冲突时不能静默覆盖数据。
 
-已验证：真实 DeepSeek 请求按 `document_read → document_save` 执行；FastAPI 与 Web `/sse/*` 代理均收到文本和工具事件；浏览器页面展示工具过程，文档更新为版本 2，刷新后消息与文档仍可回读。另用临时数据验证读取后发生外部更新时，旧版本工具保存返回 `40903` 且不覆盖内容。业务消息仍由 PostgreSQL 会话表保存；可开关的 LangGraph PostgreSQL checkpointer 实验见 [checkpointer-experiment.md](checkpointer-experiment.md)。多工作进程共享中止状态、文件附件、OpenRouter 模型接入以及服务级 Key 改为用户级凭据留待后续。
+已验证：真实 DeepSeek 请求按 `document_read → document_save` 执行；FastAPI 与 Web `/sse/*` 代理均收到文本和工具事件；浏览器页面展示工具过程，文档更新为版本 2，刷新后消息与文档仍可回读。另用临时数据验证读取后发生外部更新时，旧版本工具保存返回 `40903` 且不覆盖内容。业务消息仍由 PostgreSQL 会话表保存；可开关的 LangGraph PostgreSQL checkpointer 实验见 [checkpointer-experiment.md](checkpointer-experiment.md)。多工作进程共享中止状态、图片附件、OpenRouter 模型接入以及服务级 Key 改为用户级凭据留待后续。
+
+## 阶段 3：上下文管理对照实验（计划中）
+
+文件输入前置链路已完成：Web 可上传 PDF、DOCX、TXT、Markdown 和 JSON，原件进入私有 R2，解析文本进入 PostgreSQL 分片表，Agent 可按窗口读取。下一步使用较长的合成文件与现有文档 Agent 建立固定任务基线，比较消息裁剪与摘要的正确性、工具调用和 token 用量。实验范围、顺序及验收标准见 [context-management-experiment.md](context-management-experiment.md)。
 
 ## 后续按需求补齐
 
 - 项目重命名与删除、文档删除及版本历史。
-- 文件上传、预览与对象存储；随后再决定是否需要 RAG。
+- 扫描版 PDF 的 OCR、图片理解与更复杂的文件检索；随后再决定是否需要 RAG。
 - 更多模型凭据管理和其他原 Backend 功能。
 - 如需对比框架体验，再以同一文档任务试用 Deep Agents，比较实现复杂度和行为。
 
