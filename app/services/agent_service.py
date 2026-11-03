@@ -48,10 +48,9 @@ async def start_turn(
     message = body.message.strip()
     if not message:
         raise BusinessError(400, ErrorCode.PARAMS_ERROR, "消息不能为空")
-    if body.imageCacheKeys:
-        raise BusinessError(400, ErrorCode.PARAMS_ERROR, "图片附件暂未接入当前 Agent")
-
-    model = model_service.resolve_chat_model(body.model)
+    model = model_service.resolve_chat_model(user_id, body.model, body.mode)
+    if body.imageCacheKeys and not model_service.supports_images(user_id, body.model):
+        raise BusinessError(400, ErrorCode.PARAMS_ERROR, "当前模型不支持图片，请切换到 OpenRouter GPT 视觉模型")
     key = (user_id, session_id)
     if key in _active_runs:
         raise BusinessError(409, ErrorCode.REVISION_CONFLICT, "当前会话正在处理上一条消息")
@@ -61,6 +60,8 @@ async def start_turn(
         project_id = session.project_id
     for cache_key in body.fileCacheKeys:
         file_service.require_project_file(user_id, project_id, cache_key)
+    image_urls = [file_service.image_input_url(user_id, project_id, cache_key)
+                  for cache_key in body.imageCacheKeys]
     context = body.clientContext
     active_document_id = context.activeDocument.documentId if context and context.activeDocument else None
     referenced_document_ids = context.referencedDocumentIds if context else []
@@ -69,7 +70,7 @@ async def start_turn(
 
     tools = tools_for_project(user_id, project_id, body.mode)
     checkpointer = getattr(request.app.state, "checkpointer", None)
-    graph = build_agent_graph(model, tools, body.mode, user_id, project_id, checkpointer)
+    graph = build_agent_graph(model, tools, body.mode, user_id, project_id, checkpointer, image_urls)
     graph_config: dict = {"recursion_limit": 20}
     include_history = True
     if checkpointer is not None:

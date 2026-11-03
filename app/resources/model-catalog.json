@@ -1,0 +1,29 @@
+{
+  "defaultModel": "deepseek-chat",
+  "models": [
+    {
+      "id": "deepseek-chat",
+      "providerId": "deepseek",
+      "upstreamModelId": "deepseek-chat",
+      "apiFormat": "chat-completions",
+      "displayName": "DeepSeek Chat",
+      "description": "DeepSeek 文档问答与编辑（纯文本）",
+      "askSupported": true,
+      "agentSupported": true,
+      "imageSupported": false,
+      "enabled": true
+    },
+    {
+      "id": "openai/gpt-6-luna",
+      "providerId": "openrouter",
+      "upstreamModelId": "openai/gpt-6-luna",
+      "apiFormat": "chat-completions",
+      "displayName": "GPT-6 Luna · OpenRouter",
+      "description": "支持文本、图片问答与 Agent 工具",
+      "askSupported": true,
+      "agentSupported": true,
+      "imageSupported": true,
+      "enabled": true
+    }
+  ]
+}

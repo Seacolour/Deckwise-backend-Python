@@ -48,6 +48,18 @@ def delete_private_object(settings: R2PrivateSettings, object_key: str) -> None:
     private_client(settings).delete_object(Bucket=settings.bucket, Key=object_key)
 
 
+def get_private_object(settings: R2PrivateSettings, object_key: str, max_bytes: int) -> bytes:
+    """Read at most max_bytes + 1 bytes so callers can reject oversized objects."""
+    response = private_client(settings).get_object(
+        Bucket=settings.bucket, Key=object_key, Range=f"bytes=0-{max_bytes}",
+    )
+    body = response["Body"]
+    try:
+        return body.read(max_bytes + 1)
+    finally:
+        body.close()
+
+
 def presigned_read_url(settings: R2PrivateSettings, object_key: str, expires_seconds: int = 300) -> str:
     return private_client(settings).generate_presigned_url(
         "get_object", Params={"Bucket": settings.bucket, "Key": object_key},

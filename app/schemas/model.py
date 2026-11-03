@@ -11,3 +11,4 @@ class AvailableModelDTO(BaseModel):
     requiredCapability: str | None = None
     askSupported: bool
     agentSupported: bool
+    imageSupported: bool = False

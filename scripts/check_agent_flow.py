@@ -15,13 +15,13 @@ from sqlalchemy import text
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.security import COOKIE_NAME, new_session_token  # noqa: E402
+from app.core.config import setting  # noqa: E402
 from app.db.checkpoint import (  # noqa: E402
     checkpoint_enabled, checkpoint_thread_id, open_checkpointer, selector_loop_factory,
 )
 from app.db.session import get_engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.repositories import auth_redis_repository  # noqa: E402
-from app.services.model_service import available_models  # noqa: E402
 from app.services import model_service  # noqa: E402
 from app.agent.tools import tools_for_project  # noqa: E402
 
@@ -57,9 +57,7 @@ class ScriptedDocumentModel:
 
 
 def main() -> None:
-    models = available_models()
-    if not models:
-        raise SystemExit("No configured conversation model in .env")
+    model_id = "deepseek-chat"
     email = f"agent-check-{secrets.token_hex(8)}@example.test"
     token = new_session_token()
     with get_engine().begin() as connection:
@@ -67,15 +65,24 @@ def main() -> None:
             INSERT INTO backend_data.users (email, email_verified, sign_up_provider)
             VALUES (:email, true, 'email') RETURNING id
         """), {"email": email})
-    auth_redis_repository.create_web_session(token, user_id)
     headers = {"cookie": f"{COOKIE_NAME}={token}"}
     session_id: str | None = None
+    redis_session_created = False
     original_model_resolver = model_service.resolve_chat_model
     try:
+        auth_redis_repository.create_web_session(token, user_id)
+        redis_session_created = True
         base_url = os.getenv("DECKWISE_CHECK_BASE_URL")
         client_context = (httpx.Client(base_url=base_url, timeout=120) if base_url
                           else TestClient(app, backend_options={"loop_factory": selector_loop_factory}))
         with client_context as client:
+            if os.getenv("DECKWISE_TEST_FAKE_MODEL") != "1":
+                test_key = setting("DECKWISE_TEST_DEEPSEEK_API_KEY", aliases=("DEEPSEEK_API_KEY",))
+                if not test_key:
+                    raise SystemExit("Set DECKWISE_TEST_DEEPSEEK_API_KEY for a real-model test")
+                provisioned = client.put("/api/user/model-credentials/deepseek", headers=headers,
+                                         json={"apiKey": test_key})
+                assert provisioned.status_code == 200, provisioned.text
             project = client.post("/api/projects/create", json={"name": "Agent 联调"}, headers=headers)
             assert project.status_code == 200, project.text
             project_id = project.json()["data"]["id"]
@@ -89,12 +96,12 @@ def main() -> None:
             assert session.status_code == 200, session.text
             session_id = session.json()["data"]["id"]
             if os.getenv("DECKWISE_TEST_FAKE_MODEL") == "1":
-                model_service.resolve_chat_model = lambda _model_id: ScriptedDocumentModel(int(document_id))
+                model_service.resolve_chat_model = lambda _user_id, _model_id, _mode: ScriptedDocumentModel(int(document_id))
 
             stream_prefix = "/sse" if os.getenv("DECKWISE_CHECK_WEB_PROXY") == "1" else "/api"
             stream = client.post(f"{stream_prefix}/sessions/{session_id}/sendRPC", headers=headers, json={
                 "message": "请修改当前文档：在末尾添加一行‘本轮联调成功。’，保留原有内容。完成后说明已保存。",
-                "mode": "AGENT", "model": models[0].id,
+                "mode": "AGENT", "model": model_id,
                 "clientContext": {"activeDocument": {"documentId": document_id, "type": "markdown"}},
             })
             assert stream.status_code == 200, stream.text[:1000]
@@ -116,7 +123,7 @@ def main() -> None:
                        for item in history.json()["data"])
             ask = client.post(f"{stream_prefix}/sessions/{session_id}/sendRPC", headers=headers, json={
                 "message": "请用一句话概括当前文档。不要修改。",
-                "mode": "ASK", "model": models[0].id,
+                "mode": "ASK", "model": model_id,
                 "clientContext": {"activeDocument": {"documentId": document_id, "type": "markdown"}},
             })
             assert ask.status_code == 200 and "event: done" in ask.text, ask.text[-1000:]
@@ -144,6 +151,33 @@ def main() -> None:
             assert stale["success"] is False and stale["code"] == 40903, stale
             current = client.get(f"/api/documents/{document_id}", headers=headers).json()["data"]
             assert current["version"] == 3 and current["draftContent"] == "外部更新"
+            edit_tools = tools_for_project(user_id, int(project_id), "AGENT")
+            created = json.loads(next(tool for tool in edit_tools if tool.name == "document_create").invoke({
+                "title": "从资料整理的文档", "content": "# 摘要\n保留这行\n待修改的结论\n结束",
+            }))
+            assert created["success"], created
+            new_document_id = int(created["document_id"])
+            locate = next(tool for tool in edit_tools if tool.name == "document_locate")
+            diff = next(tool for tool in edit_tools if tool.name == "document_diff")
+            save = next(tool for tool in edit_tools if tool.name == "document_save")
+            found = json.loads(locate.invoke({
+                "document_id": new_document_id, "query": "待修改的结论",
+            }))
+            assert found["success"] and found["matches"][0]["start_line"] == 3, found
+            modified = json.loads(diff.invoke({"document_id": new_document_id, "hunks": [{
+                "op": "REPLACE", "before": found["matches"][0]["before"],
+                "after": "核验后的结论", "start_line": 3,
+            }]}))
+            assert modified["success"] and modified["must_call_document_save"], modified
+            before_save = client.get(f"/api/documents/{new_document_id}", headers=headers).json()["data"]
+            assert before_save["version"] == 1 and "待修改的结论" in before_save["draftContent"]
+            stored = json.loads(save.invoke({"document_id": new_document_id, "version": 1}))
+            assert stored["success"] and stored["version"] == 2, stored
+            after_save = client.get(f"/api/documents/{new_document_id}", headers=headers).json()["data"]
+            assert after_save["draftContent"] == "# 摘要\n保留这行\n核验后的结论\n结束"
+            out_of_scope = json.loads(locate.invoke({"document_id": int(other_document_id), "query": "隔离"}))
+            assert out_of_scope["success"] is False
+            print("document create/locate/diff/save flow OK")
             print("Agent flow OK: model tools, SSE, persisted document and messages")
         if checkpoint_enabled():
             async def inspect_state() -> None:
@@ -175,9 +209,12 @@ def main() -> None:
                 async with open_checkpointer() as saver:
                     await saver.adelete_thread(checkpoint_thread_id(user_id, int(session_id)))
             asyncio.run(remove_state(), loop_factory=selector_loop_factory)
-        auth_redis_repository.revoke_web_session(token)
-        with get_engine().begin() as connection:
-            connection.execute(text("DELETE FROM backend_data.users WHERE email = :email"), {"email": email})
+        try:
+            if redis_session_created:
+                auth_redis_repository.revoke_web_session(token)
+        finally:
+            with get_engine().begin() as connection:
+                connection.execute(text("DELETE FROM backend_data.users WHERE email = :email"), {"email": email})
 
 
 if __name__ == "__main__":

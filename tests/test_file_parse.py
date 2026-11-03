@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pypandoc
 import pytest
+from PIL import Image
 from reportlab.pdfgen import canvas
 
 from app.core.exceptions import BusinessError
@@ -49,3 +50,16 @@ def test_invalid_pdf_is_rejected_before_upload() -> None:
     with pytest.raises(BusinessError) as caught:
         parse_file("bad.pdf", b"not a PDF")
     assert caught.value.status == 422
+
+
+def test_image_is_validated_without_text_fragments() -> None:
+    output = BytesIO()
+    Image.new("RGB", (32, 24), color="red").save(output, format="PNG")
+    parsed = parse_file("sample.png", output.getvalue())
+    assert parsed.mime_type == "image/png" and parsed.fragments == [] and parsed.text_chars == 0
+    with pytest.raises(BusinessError) as invalid:
+        parse_file("sample.png", b"not an image")
+    assert invalid.value.status == 422
+    with pytest.raises(BusinessError) as mismatch:
+        parse_file("sample.jpg", output.getvalue())
+    assert mismatch.value.status == 422

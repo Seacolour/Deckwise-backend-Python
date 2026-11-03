@@ -5,10 +5,11 @@ import json
 from langchain_core.tools import BaseTool, tool
 
 from app.core.exceptions import BusinessError
+from app.agent.tools.document_edit_session import DocumentEditSession
 from app.services import document_service
 
 
-def make_document_read_tool(user_id: int, project_id: int, read_versions: dict[int, int]) -> BaseTool:
+def make_document_read_tool(user_id: int, project_id: int, edit_sessions: dict[int, DocumentEditSession]) -> BaseTool:
     @tool
     def document_read(document_id: int) -> str:
         """Read the full Markdown draft and current version of a document in this project.
@@ -24,7 +25,7 @@ def make_document_read_tool(user_id: int, project_id: int, read_versions: dict[i
         content = document.draftContent or ""
         if len(content) > 80_000:
             return json.dumps({"success": False, "error": "文档过长，当前 Agent 无法安全读取完整草稿"}, ensure_ascii=False)
-        read_versions[document_id] = document.version
+        edit_sessions[document_id] = DocumentEditSession(document.version, content, full_read=True)
         return json.dumps({
             "success": True, "document_id": document.id,
             "title": document.title, "version": document.version,

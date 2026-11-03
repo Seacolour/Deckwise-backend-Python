@@ -1,6 +1,7 @@
 """Project-scoped document and uploaded-file discovery tool."""
 
 import json
+from pathlib import Path
 
 from langchain_core.tools import BaseTool, tool
 
@@ -23,7 +24,12 @@ def make_file_list_tool(user_id: int, project_id: int) -> BaseTool:
             ],
             "files": [
                 {"file_id": item.id, "cache_key": item.cacheKey,
-                 "name": item.fileName, "document_id": item.documentId}
+                 "name": item.fileName, "document_id": item.documentId,
+                 "composite_tools": (["json_structure_read", "json_subtree_read", "file_content_read"]
+                                     if Path(item.fileName).suffix.lower() == ".json"
+                                     else [] if Path(item.fileName).suffix.lower() in
+                                     {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+                                     else ["file_content_read"])}
                 for item in files
             ],
         }, ensure_ascii=False)

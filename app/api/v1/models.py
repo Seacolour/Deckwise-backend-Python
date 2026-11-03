@@ -10,5 +10,5 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 
 
 @router.get("/available")
-def list_available_models(_user_id: int = Depends(current_user_id)) -> dict[str, object]:
-    return ok([item.model_dump(mode="json") for item in available_models()])
+def list_available_models(user_id: int = Depends(current_user_id)) -> dict[str, object]:
+    return ok([item.model_dump(mode="json") for item in available_models(user_id)])

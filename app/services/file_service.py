@@ -1,7 +1,9 @@
 """Private project uploads and bounded parsed-content reads."""
 
 import hashlib
+import json
 import logging
+from pathlib import Path
 from uuid import uuid4
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -10,7 +12,7 @@ from fastapi import UploadFile
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import BusinessError
 from app.core.r2_storage import (
-    delete_private_object, new_object_key, presigned_read_url,
+    delete_private_object, get_private_object, new_object_key, presigned_read_url,
     private_settings, put_private_object,
 )
 from app.db.session import session_scope
@@ -19,11 +21,16 @@ from app.schemas.file import (
     FileContentPageDTO, FileFragmentDTO, FileUploadBatchDTO,
     FileUploadItemDTO, PrivateObjectAccessUrlDTO,
 )
-from app.services.file_parse_service import MAX_FILE_BYTES, ParsedFile, parse_file, safe_filename
+from app.services.file_parse_service import MAX_FILE_BYTES, MAX_IMAGE_BYTES, ParsedFile, parse_file, safe_filename
 from app.services.project_service import require_owned_project
 
 logger = logging.getLogger("uvicorn.error")
 MAX_BATCH_FILES = 20
+MAX_STRUCTURED_JSON_BYTES = 1_000_000
+
+
+def _reject_non_json_constant(value: str) -> None:
+    raise ValueError(f"Invalid JSON constant: {value}")
 
 
 def _upload_item(
@@ -42,7 +49,12 @@ def upload_one(user_id: int, project_id: int, file: UploadFile) -> FileUploadIte
     with session_scope() as db:
         require_owned_project(db, user_id, project_id)
     name = safe_filename(file.filename)
-    data = file.file.read(MAX_FILE_BYTES + 1)
+    image_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+    byte_limit = MAX_IMAGE_BYTES if Path(name).suffix.lower() in image_suffixes else MAX_FILE_BYTES
+    data = file.file.read(byte_limit + 1)
+    if len(data) > byte_limit:
+        raise BusinessError(413, ErrorCode.PARAMS_ERROR,
+                            "图片不能超过 8 MB" if byte_limit == MAX_IMAGE_BYTES else "文件不能超过 50 MB")
     parsed = parse_file(name, data)
     cache_key = hashlib.sha256(data).hexdigest()
     with session_scope() as db:
@@ -50,7 +62,7 @@ def upload_one(user_id: int, project_id: int, file: UploadFile) -> FileUploadIte
         existing = file_repository.find_existing_file(db, user_id, cache_key)
         if existing:
             file_repository.attach_file(db, project_id, existing["id"], user_id, name)
-            if file_repository.count_fragments(db, existing["id"]) == 0:
+            if parsed.fragments and file_repository.count_fragments(db, existing["id"]) == 0:
                 file_repository.insert_fragments(db, existing["id"], parsed.fragments, parsed.extension)
             return _upload_item(existing["id"], name, len(data), cache_key, parsed, existing["object_key"])
 
@@ -68,10 +80,12 @@ def upload_one(user_id: int, project_id: int, file: UploadFile) -> FileUploadIte
                 db, user_id, cache_key, name, settings.bucket, object_key,
                 len(data), parsed.mime_type, parsed.extension, parsed.text_chars,
                 len(parsed.fragments),
-                "pypandoc" if parsed.extension == ".docx" else "pypdf" if parsed.extension == ".pdf" else "utf-8",
+                "pypandoc" if parsed.extension == ".docx" else "pypdf" if parsed.extension == ".pdf"
+                else "image" if not parsed.fragments else "utf-8",
                 etag,
             )
-            file_repository.insert_fragments(db, file_id, parsed.fragments, parsed.extension)
+            if parsed.fragments:
+                file_repository.insert_fragments(db, file_id, parsed.fragments, parsed.extension)
             file_repository.attach_file(db, project_id, file_id, user_id, name)
         return _upload_item(file_id, name, len(data), cache_key, parsed, object_key)
     except Exception:
@@ -102,6 +116,44 @@ def require_project_file(user_id: int, project_id: int, cache_key: str) -> dict:
     if row is None:
         raise BusinessError(404, ErrorCode.NOT_FOUND, "文件不存在")
     return row
+
+
+def image_input_url(user_id: int, project_id: int, cache_key: str) -> str:
+    """Issue a short-lived URL only for an authorized project image."""
+    row = require_project_file(user_id, project_id, cache_key)
+    if row["mime_type"] not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+        raise BusinessError(400, ErrorCode.PARAMS_ERROR, "imageCacheKeys 仅支持图片文件")
+    if row["size_bytes"] > MAX_IMAGE_BYTES:
+        raise BusinessError(413, ErrorCode.PARAMS_ERROR, "图片不能超过 8 MB")
+    settings = private_settings()
+    if row["bucket"] != settings.bucket:
+        raise BusinessError(404, ErrorCode.NOT_FOUND, "文件存储配置不匹配")
+    return presigned_read_url(settings, row["object_key"], expires_seconds=600)
+
+
+def read_project_json(user_id: int, project_id: int, file_id: int) -> object:
+    """Load a bounded JSON original after checking its project link and owner."""
+    with session_scope() as db:
+        row = file_repository.find_project_file(db, user_id, project_id, file_id=file_id)
+    if row is None:
+        raise BusinessError(404, ErrorCode.NOT_FOUND, "文件不存在")
+    if Path(row["original_name"] or "").suffix.lower() != ".json":
+        raise BusinessError(400, ErrorCode.PARAMS_ERROR, "只支持 JSON 文件")
+    if row["size_bytes"] > MAX_STRUCTURED_JSON_BYTES:
+        raise BusinessError(413, ErrorCode.PARAMS_ERROR, "JSON 文件超过结构化读取限制")
+    settings = private_settings()
+    if row["bucket"] != settings.bucket:
+        raise BusinessError(404, ErrorCode.NOT_FOUND, "文件存储配置不匹配")
+    try:
+        data = get_private_object(settings, row["object_key"], MAX_STRUCTURED_JSON_BYTES)
+    except (BotoCoreError, ClientError) as error:
+        raise BusinessError(502, ErrorCode.EXTERNAL_SERVICE_ERROR, "JSON 原件读取失败") from error
+    if len(data) > MAX_STRUCTURED_JSON_BYTES:
+        raise BusinessError(413, ErrorCode.PARAMS_ERROR, "JSON 文件超过结构化读取限制")
+    try:
+        return json.loads(data.decode("utf-8-sig"), parse_constant=_reject_non_json_constant)
+    except (UnicodeError, ValueError) as error:
+        raise BusinessError(422, ErrorCode.PARAMS_ERROR, "JSON 文件格式无效") from error
 
 
 def read_file_fragments(

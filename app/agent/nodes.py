@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from typing import Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END
 from langgraph.prebuilt import ToolNode
@@ -12,7 +12,7 @@ from langgraph.prebuilt import ToolNode
 from app.agent.state import AgentState
 from app.services import document_service
 
-MAX_TOOL_ROUNDS = 4
+MAX_TOOL_ROUNDS = 6
 
 
 def make_context_node(user_id: int, project_id: int) -> Callable:
@@ -36,7 +36,8 @@ def make_context_node(user_id: int, project_id: int) -> Callable:
     return load_context
 
 
-def make_model_node(model: BaseChatModel, tools: Sequence[BaseTool], mode: str) -> Callable:
+def make_model_node(model: BaseChatModel, tools: Sequence[BaseTool], mode: str,
+                    image_urls: Sequence[str] = ()) -> Callable:
     bound_model = model.bind_tools(tools)
 
     async def call_model(state: AgentState) -> dict:
@@ -47,15 +48,30 @@ def make_model_node(model: BaseChatModel, tools: Sequence[BaseTool], mode: str) 
         )
         if mode == "AGENT":
             instruction += (
-                "用户要求修改文档时，先调用 document_read 获取完整草稿和版本，"
-                "再用 document_save 提交完整的新草稿和读取到的版本。"
+                "用户要求新建文档时使用 document_create；如需根据附件创作，先用 file_content_read 阅读资料。"
+                "局部编辑时用 document_locate 找到精确原文和行号，再用 document_diff 修改工作副本，"
+                "最后调用 document_save，传入版本但省略 draft_content。"
+                "也可先用 document_read 获取完整草稿，再用 document_save 提交完整的新草稿。"
                 "遇到版本冲突时重新读取后再决定是否重试，不能盲目覆盖。"
             )
         else:
             instruction += "当前是问答模式，只读取资料并回答，不修改文档。"
         instruction += "对于用户附加的文件，应调用 file_content_read 按需读取文本分片，不要假设文件内容已进入上下文。"
+        instruction += "对于 JSON 文件，可先用 json_structure_read 查看结构，再按返回的 JSON Pointer 用 json_subtree_read 读取局部内容。"
+        if image_urls:
+            instruction += "本轮附加图片已作为视觉输入提供，请根据图片实际内容回答，不要仅凭文件名推测。"
         instruction += "\n" + state.get("context_note", "")
-        response = await bound_model.ainvoke([SystemMessage(content=instruction), *state["messages"]])
+        messages = list(state["messages"])
+        if image_urls:
+            for index in range(len(messages) - 1, -1, -1):
+                if isinstance(messages[index], HumanMessage):
+                    original = messages[index]
+                    messages[index] = HumanMessage(content=[
+                        {"type": "text", "text": str(original.content)},
+                        *({"type": "image_url", "image_url": {"url": url}} for url in image_urls),
+                    ])
+                    break
+        response = await bound_model.ainvoke([SystemMessage(content=instruction), *messages])
         return {"messages": [response]}
 
     return call_model

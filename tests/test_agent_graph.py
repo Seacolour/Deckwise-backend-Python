@@ -48,3 +48,28 @@ def test_document_save_requires_a_successful_read() -> None:
     }))
     assert result["success"] is False and result["code"] == 40903
     assert all(item.name != "document_save" for item in tools_for_project(1, 1, "ASK"))
+
+
+def test_image_url_reaches_model_without_entering_graph_state() -> None:
+    class RecordingModel:
+        def __init__(self):
+            self.messages = []
+
+        def bind_tools(self, _tools):
+            return self
+
+        async def ainvoke(self, messages):
+            self.messages = messages
+            return AIMessage(content="看到了图片")
+
+    model = RecordingModel()
+    graph = build_agent_graph(model, [], "ASK", 1, 1,
+                              image_urls=["https://private.example.test/image.png"])
+    result = asyncio.run(graph.ainvoke({
+        "messages": [HumanMessage(content="图中是什么？")], "active_document_id": None,
+        "tool_rounds": 0,
+    }))
+    assert result["messages"][0].content == "图中是什么？"
+    input_blocks = model.messages[-1].content
+    assert input_blocks[0] == {"type": "text", "text": "图中是什么？"}
+    assert input_blocks[1]["image_url"]["url"] == "https://private.example.test/image.png"

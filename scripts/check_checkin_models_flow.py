@@ -14,7 +14,6 @@ from sqlalchemy import text
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.security import COOKIE_NAME, new_session_token  # noqa: E402
-from app.core.config import setting  # noqa: E402
 from app.db.session import get_engine  # noqa: E402
 from app.db.checkpoint import selector_loop_factory  # noqa: E402
 from app.main import app  # noqa: E402
@@ -58,12 +57,7 @@ def main() -> None:
             assert anonymous.status_code == 401, anonymous.text
             models = _request(client, "GET", "/api/models/available", tokens[0])
             assert models.status_code == 200 and isinstance(models.json()["data"], list), models.text
-            if setting("DEEPSEEK_API_KEY"):
-                assert any(model["id"] == (setting("DECKWISE_DEEPSEEK_MODEL", "deepseek-chat"))
-                           and model["askSupported"] and model["agentSupported"]
-                           for model in models.json()["data"]), models.text
-            else:
-                assert models.json()["data"] == [], models.text
+            assert models.json()["data"] == [], models.text
 
             initial = _request(client, "GET", "/api/user/checkin/status", tokens[0])
             assert initial.status_code == 200, initial.text
