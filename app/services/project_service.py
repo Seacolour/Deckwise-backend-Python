@@ -33,7 +33,7 @@ def _project_dto(project: Project) -> ProjectDTO:
     )
 
 
-def _session_dto(session: ConversationSession) -> SessionDTO:
+def session_to_dto(session: ConversationSession) -> SessionDTO:
     return SessionDTO(
         id=str(session.id), projectId=str(session.project_id), createdBy=session.created_by,
         title=session.title, lastUserMessage=session.last_user_message,
@@ -70,7 +70,7 @@ def list_sessions(
         require_owned_project(db, user_id, project_id)
         rows, total = project_repository.list_sessions(db, project_id, query, archived)
         return PageResponse[SessionDTO].of(
-            query.current, query.page_size, total, [_session_dto(row) for row in rows],
+            query.current, query.page_size, total, [session_to_dto(row) for row in rows],
         )
 
 

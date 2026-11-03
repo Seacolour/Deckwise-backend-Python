@@ -11,7 +11,7 @@
 - 邮箱验证码登录、HttpOnly Cookie 鉴权和退出登录已与 Web 联通。
 - 用户及登录记录保存在 PostgreSQL；验证码和登录会话保存在 Redis。
 - FastAPI 的 API、Service、Repository、Schema、Model 和 Agent 包结构已建立。
-- 阶段 1 的项目、会话列表、文件列表和 Markdown 草稿接口已实现；Agent 模块仍是结构外壳。模型列表和每日签到接口已补齐，模型列表在对话能力接入前如实返回空数组。
+- 阶段 1 的项目、会话列表、文件列表和 Markdown 草稿接口已实现。模型列表和每日签到接口已补齐；配置 `DEEPSEEK_API_KEY` 后，DeepSeek 已可用于文档问答和 Agent 编辑。
 
 ## 阶段 1：工作区与文档闭环（已完成）
 
@@ -43,7 +43,7 @@
 - `GET /api/user/checkin/status` 与 `POST /api/user/checkin` 使用 PostgreSQL 签到状态和日志表，按用户时区计算日期，并保证同日重复签到不重复记奖励。
 - `scripts/check_checkin_models_flow.py` 通过 FastAPI、实际 HTTP 服务和 Web 代理；浏览器登录后确认三个请求均为 200，页面控制台无错误。
 
-## 阶段 2：最小 Agent 文档编辑链路（下一阶段）
+## 阶段 2：最小 Agent 文档编辑链路（已完成）
 
 - 在对话执行能力接入后填充 `GET /api/models/available`，只展示当前实际配置且可调用的模型。
 - 完成会话创建、消息读取和流式回复所需的最小 API；先核对现有 Web 的 SSE 事件格式。
@@ -53,6 +53,8 @@
 ### 阶段 2 验收
 
 从 Web 选择模型，向 Agent 发出一个文档修改请求；界面能看到流式结果，文档实际更新，刷新后对话及文档状态仍可回读。Agent 遇到无权限或版本冲突时不能静默覆盖数据。
+
+已验证：真实 DeepSeek 请求按 `document_read → document_save` 执行；FastAPI 与 Web `/sse/*` 代理均收到文本和工具事件；浏览器页面展示工具过程，文档更新为版本 2，刷新后消息与文档仍可回读。另用临时数据验证读取后发生外部更新时，旧版本工具保存返回 `40903` 且不覆盖内容。业务消息仍由 PostgreSQL 会话表保存；可开关的 LangGraph PostgreSQL checkpointer 实验见 [checkpointer-experiment.md](checkpointer-experiment.md)。多工作进程共享中止状态、文件附件、OpenRouter 模型接入以及服务级 Key 改为用户级凭据留待后续。
 
 ## 后续按需求补齐
 

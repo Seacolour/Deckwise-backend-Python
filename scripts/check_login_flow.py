@@ -11,6 +11,7 @@ from sqlalchemy import text
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.db.session import get_engine  # noqa: E402
+from app.db.checkpoint import selector_loop_factory  # noqa: E402
 from app.core.security import COOKIE_NAME  # noqa: E402
 from app.main import app  # noqa: E402
 from app.repositories import auth_redis_repository  # noqa: E402
@@ -29,7 +30,7 @@ def main() -> None:
     os.environ["APP_RESEND_FROM"] = "test@example.test"
 
     try:
-        with TestClient(app) as client:
+        with TestClient(app, backend_options={"loop_factory": selector_loop_factory}) as client:
             assert client.get("/api/user/get/login").status_code == 401
             sent = client.post("/api/user/login/email-code", json={"email": email})
             assert sent.status_code == 200 and sent.json()["data"] is True, (sent.status_code, sent.text)

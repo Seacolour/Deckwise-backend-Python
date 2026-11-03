@@ -50,9 +50,14 @@ def list_documents(user_id: int, project_id: int, offset: int, limit: int) -> li
         return [_dto(item) for item in document_repository.list_documents(db, project_id, offset, limit)]
 
 
-def get_document(user_id: int, document_id: int, include_versions: bool) -> DocumentDTO:
+def get_document(
+    user_id: int, document_id: int, include_versions: bool,
+    expected_project_id: int | None = None,
+) -> DocumentDTO:
     with session_scope() as db:
         document = _owned_document(db, user_id, document_id)
+        if expected_project_id is not None and document.project_id != expected_project_id:
+            raise BusinessError(404, ErrorCode.NOT_FOUND, "文档不存在")
         versions = None
         if include_versions:
             versions = [DocumentVersionDTO(
@@ -64,11 +69,17 @@ def get_document(user_id: int, document_id: int, include_versions: bool) -> Docu
         return _dto(document, versions)
 
 
-def update_draft(user_id: int, document_id: int, body: DocumentDraftUpdateRequest) -> DocumentDTO:
+def update_draft(
+    user_id: int, document_id: int, body: DocumentDraftUpdateRequest,
+    expected_project_id: int | None = None,
+) -> DocumentDTO:
     with session_scope() as db:
-        _owned_document(db, user_id, document_id)
+        document = _owned_document(db, user_id, document_id)
+        if expected_project_id is not None and document.project_id != expected_project_id:
+            raise BusinessError(404, ErrorCode.NOT_FOUND, "文档不存在")
         changed = document_repository.update_draft_if_version(
             db, document_id, body.version, body.draftContent, user_id, datetime.now(timezone.utc),
+            expected_project_id,
         )
         if not changed:
             raise BusinessError(409, ErrorCode.REVISION_CONFLICT, "文档版本已变化，请刷新后重试")

@@ -10,7 +10,7 @@ See [the phase plan](docs/phase-plan.md) for the next Web-to-Agent implementatio
 - `app/services/` owns use cases and external calls such as Resend.
 - `app/repositories/` owns PostgreSQL and Redis access. Services control PostgreSQL transaction boundaries through `app/db/session.py`.
 - `app/models/` maps the reused `backend_data` tables; `app/schemas/` defines request and response DTOs.
-- `app/agent/` is the in-process Agent business package. Its graph, tools, prompts, and memory modules are structural boundaries for the next implementation slice; Agent and streaming APIs are not registered yet.
+- `app/agent/` runs a LangGraph model/tool loop in process. Project-scoped LangChain tools call the existing document services, and conversation messages are persisted in PostgreSQL.
 - Root `db/migration/` and `db/pom.xml` remain the Flyway database migration tooling.
 
 ## HTTP foundations
@@ -26,7 +26,7 @@ Requires Python 3.14 or newer and [uv](https://docs.astral.sh/uv/).
 ```powershell
 uv sync --locked
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-uv run uvicorn app.main:app --reload --no-access-log --log-config logging.json
+uv run uvicorn app.main:app --reload --no-access-log --log-config logging.json --loop app.db.checkpoint:selector_loop_factory
 ```
 
 Fill in `DECKWISE_DB_PASSWORD`, `APP_RESEND_API_KEY`, and `APP_RESEND_FROM` in the Git-ignored `.env` file. The database host, port, name, user, Redis URL, logging environment, and cookie setting can be changed there too. Process environment variables take precedence. An existing `.env` with the older `DB_PASSWORD` key also works. The API is available at `http://127.0.0.1:8000/` and its OpenAPI UI at `/docs`. `scripts/run_api.ps1` remains an optional wrapper around the same Uvicorn command.
@@ -72,8 +72,16 @@ The Java backend's `OPENAI_*` settings are not wired into this Python API. Autom
 
 ## Model picker and daily check-in
 
-`GET /api/models/available` now returns an authenticated, Web-compatible response. Its list is empty until a model can actually handle a conversation request; this keeps the Web send button disabled while the Agent API is still being built. Adding a provider key to `.env` alone does not enable chat yet.
+`GET /api/models/available` returns the DeepSeek chat model when `DEEPSEEK_API_KEY` is configured; otherwise it returns an empty list. The model ID defaults to `deepseek-chat` and can be set with `DECKWISE_DEEPSEEK_MODEL`. No OpenAI API key is used. This first path uses a server-wide DeepSeek key for every authenticated user; per-user credentials and usage limits are future work before public deployment.
 
 `GET /api/user/checkin/status` reads the user's streak from PostgreSQL. `POST /api/user/checkin` uses the user's saved time zone (or a valid time zone from the first request), records one check-in per business day, and returns zero additional points on repeated requests. The recorded reward follows the Java demo's 500-point daily / 1000-point seven-day rule; it is a check-in record, not a spendable balance.
 
 Run `uv run python scripts/check_checkin_models_flow.py` to verify these endpoints with temporary accounts. As with the workspace check, `DECKWISE_CHECK_BASE_URL` can target a running API or the Web proxy.
+
+## Document-editing Agent
+
+The Web can create a conversation with `POST /api/projects/{projectId}/create`, read its messages through `GET /api/sessions/{sessionId}/messages/after-seq`, and stream a turn through `POST /api/sessions/{sessionId}/sendRPC` (proxied by the Web as `/sse/sessions/{sessionId}/sendRPC`). `POST /api/sessions/{sessionId}/abort` stops an active local run.
+
+In `AGENT` mode, a LangGraph context → model ↔ tools flow offers `file_list`, `document_read`, and `document_save`. `ASK` mode exposes only read tools. Each tool is scoped to the authenticated user's current project. Saving requires a successful read in the same turn and the document's current `version`; a concurrent edit returns `40903` without overwriting it. PostgreSQL session messages remain the Web-facing history. An optional PostgreSQL checkpointer can also retain graph state across turns; see [the checkpoint experiment](docs/checkpointer-experiment.md). The local in-memory abort registry does not coordinate across multiple API workers.
+
+Run `uv run python scripts/check_agent_flow.py` for a real DeepSeek edit against temporary data. Set `DECKWISE_CHECK_BASE_URL=http://127.0.0.1:8000` to use a running API; to verify the Web SSE proxy, use `DECKWISE_CHECK_BASE_URL=http://localhost:3000` with `DECKWISE_CHECK_WEB_PROXY=1`. The script removes its temporary account and data after the check. File attachments and uploaded-file content are outside this first Agent path.

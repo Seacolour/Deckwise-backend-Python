@@ -14,7 +14,9 @@ from sqlalchemy import text
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.security import COOKIE_NAME, new_session_token  # noqa: E402
+from app.core.config import setting  # noqa: E402
 from app.db.session import get_engine  # noqa: E402
+from app.db.checkpoint import selector_loop_factory  # noqa: E402
 from app.main import app  # noqa: E402
 from app.repositories import auth_redis_repository  # noqa: E402
 
@@ -49,12 +51,19 @@ def main() -> None:
             auth_redis_repository.create_web_session(token, user_id)
 
         base_url = os.getenv("DECKWISE_CHECK_BASE_URL")
-        client_context = httpx.Client(base_url=base_url, timeout=15) if base_url else TestClient(app)
+        client_context = (httpx.Client(base_url=base_url, timeout=15) if base_url else
+                          TestClient(app, backend_options={"loop_factory": selector_loop_factory}))
         with client_context as client:
             anonymous = client.get("/api/models/available")
             assert anonymous.status_code == 401, anonymous.text
             models = _request(client, "GET", "/api/models/available", tokens[0])
-            assert models.status_code == 200 and models.json()["data"] == [], models.text
+            assert models.status_code == 200 and isinstance(models.json()["data"], list), models.text
+            if setting("DEEPSEEK_API_KEY"):
+                assert any(model["id"] == (setting("DECKWISE_DEEPSEEK_MODEL", "deepseek-chat"))
+                           and model["askSupported"] and model["agentSupported"]
+                           for model in models.json()["data"]), models.text
+            else:
+                assert models.json()["data"] == [], models.text
 
             initial = _request(client, "GET", "/api/user/checkin/status", tokens[0])
             assert initial.status_code == 200, initial.text
@@ -87,7 +96,7 @@ def main() -> None:
                 SELECT preferred_time_zone FROM backend_data.users WHERE id = :user_id
             """), {"user_id": user_ids[0]})
         assert count == 1 and zone == "Asia/Shanghai"
-        print("model/check-in flow OK: auth, empty catalog, daily idempotence, streak, persistence")
+        print("model/check-in flow OK: auth, catalog, daily idempotence, streak, persistence")
     finally:
         for token in tokens:
             auth_redis_repository.revoke_web_session(token)

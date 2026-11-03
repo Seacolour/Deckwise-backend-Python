@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.security import COOKIE_NAME, new_session_token  # noqa: E402
 from app.db.session import get_engine  # noqa: E402
+from app.db.checkpoint import selector_loop_factory  # noqa: E402
 from app.main import app  # noqa: E402
 from app.repositories import auth_redis_repository  # noqa: E402
 
@@ -38,7 +39,8 @@ def main() -> None:
             auth_redis_repository.create_web_session(token, user_id)
 
         base_url = os.getenv("DECKWISE_CHECK_BASE_URL")
-        client_context = httpx.Client(base_url=base_url, timeout=15) if base_url else TestClient(app)
+        client_context = (httpx.Client(base_url=base_url, timeout=15) if base_url else
+                          TestClient(app, backend_options={"loop_factory": selector_loop_factory}))
         with client_context as client:
             first, second = tokens
             list_body = {"current": 1, "pageSize": 100, "sortField": "updatedAt", "sortOrder": "desc", "archived": False}

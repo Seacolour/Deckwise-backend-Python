@@ -4,7 +4,7 @@ from app.models.base import Base
 from app.models.checkin import UserCheckinLog, UserCheckinStatus
 from app.models.document import Document
 from app.models.project import Project
-from app.models.session import ConversationSession
+from app.models.session import ConversationSession, SessionMessage
 from app.models.user import User
 
-__all__ = ["Base", "ConversationSession", "Document", "Project", "User", "UserCheckinLog", "UserCheckinStatus"]
+__all__ = ["Base", "ConversationSession", "Document", "Project", "SessionMessage", "User", "UserCheckinLog", "UserCheckinStatus"]

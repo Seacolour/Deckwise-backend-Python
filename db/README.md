@@ -4,4 +4,6 @@
 
 Login codes and Web sessions live in Redis. User accounts and login records remain in PostgreSQL. The local development database's Flyway history matches V1–V12.
 
+The optional LangGraph PostgreSQL checkpointer uses tables in the database's `public` schema. `AsyncPostgresSaver.setup()` manages those tables independently of Flyway when the experiment is enabled.
+
 Do not edit applied Flyway migrations. Once the Python feature set is stable, remove unused tables with forward migrations and build a separate clean baseline for fresh installations if needed.

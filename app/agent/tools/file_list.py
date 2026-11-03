@@ -1,1 +1,30 @@
-"""Project file listing tool will use an authenticated service context."""
+"""Project-scoped document and uploaded-file discovery tool."""
+
+import json
+
+from langchain_core.tools import BaseTool, tool
+
+from app.services import document_service, project_service
+
+
+def make_file_list_tool(user_id: int, project_id: int) -> BaseTool:
+    @tool
+    def file_list() -> str:
+        """List document IDs and file names in the current project.
+
+        Use document_read with a listed document ID to see its current draft.
+        """
+        documents = document_service.list_documents(user_id, project_id, 0, 100)
+        files = project_service.list_project_files(user_id, project_id)
+        return json.dumps({
+            "documents": [
+                {"document_id": item.id, "title": item.title, "version": item.version}
+                for item in documents
+            ],
+            "files": [
+                {"file_id": item.id, "name": item.fileName, "document_id": item.documentId}
+                for item in files
+            ],
+        }, ensure_ascii=False)
+
+    return file_list

@@ -39,15 +39,19 @@ def get_owned_document(db: Session, user_id: int, document_id: int) -> Document 
 
 def update_draft_if_version(
     db: Session, document_id: int, version: int, content: str, user_id: int, now: datetime,
+    expected_project_id: int | None = None,
 ) -> bool:
-    updated_id = db.scalar(update(Document).where(
+    filters = [
         Document.id == document_id,
         Document.version == version,
         Document.is_deleted.is_(False),
         Document.project_id.in_(select(Project.id).where(
             Project.owner_id == user_id, Project.is_deleted.is_(False),
         )),
-    ).values(
+    ]
+    if expected_project_id is not None:
+        filters.append(Document.project_id == expected_project_id)
+    updated_id = db.scalar(update(Document).where(*filters).values(
         draft_content=content,
         draft_updated_at=now,
         updated_at=now,

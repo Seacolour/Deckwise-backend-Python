@@ -6,13 +6,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.exceptions import handle_unexpected_error
+from app.db.checkpoint import selector_loop_factory
 from app.core.request_logging import RequestLogMiddleware
 from app.main import app
 
 
 def test_request_id_and_logs_exclude_query_values(caplog) -> None:
     with caplog.at_level(logging.INFO, logger="uvicorn.error"):
-        response = TestClient(app).get(
+        response = TestClient(app, backend_options={"loop_factory": selector_loop_factory}).get(
             "/hello/User?apiKey=should-not-appear-in-logs",
             headers={"X-Request-ID": "test-request-123"},
         )
@@ -28,7 +29,7 @@ def test_request_id_and_logs_exclude_query_values(caplog) -> None:
 def test_dev_body_logs_business_fields_but_redacts_credentials(caplog, monkeypatch) -> None:
     monkeypatch.setenv("DECKWISE_ENV", "dev")
     with caplog.at_level(logging.INFO, logger="uvicorn.error"):
-        response = TestClient(app).post(
+        response = TestClient(app, backend_options={"loop_factory": selector_loop_factory}).post(
             "/api/user/login",
             json={"email": "bad-email", "code": "123456", "apiKey": "private-api-key"},
         )
@@ -44,7 +45,7 @@ def test_dev_body_logs_business_fields_but_redacts_credentials(caplog, monkeypat
 def test_prod_body_is_not_logged(caplog, monkeypatch) -> None:
     monkeypatch.setenv("DECKWISE_ENV", "prod")
     with caplog.at_level(logging.INFO, logger="uvicorn.error"):
-        response = TestClient(app).post(
+        response = TestClient(app, backend_options={"loop_factory": selector_loop_factory}).post(
             "/api/user/login",
             json={"email": "bad-email", "code": "123456"},
         )
@@ -54,7 +55,7 @@ def test_prod_body_is_not_logged(caplog, monkeypatch) -> None:
 
 
 def test_validation_and_missing_routes_use_web_error_envelope() -> None:
-    with TestClient(app) as client:
+    with TestClient(app, backend_options={"loop_factory": selector_loop_factory}) as client:
         invalid = client.post("/api/user/login", json={"email": "bad-email", "code": "123456"})
         missing = client.get("/api/unknown")
         unauthenticated = client.get("/api/user/get/login")
