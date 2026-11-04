@@ -13,7 +13,7 @@
 - `app/repositories/session_repository.py` 从业务会话表取最近 30 条已完成的用户/助手文本消息；这不是 token 预算，跨轮工具事件也不在这 30 条中。
 - `app/services/agent_service.py` 将历史与当前消息交给图。启用 checkpointer 时，后续轮次改由图恢复消息状态，不再重复注入业务历史。
 - `app/agent/nodes.py` 为每次模型调用附加系统指令和当前文档的 ID、标题、版本等信息；文档正文由 `document_read` 按需读取。
-- 当前有每轮最多 4 个工具批次、单份文档最多读取 80,000 字符等保护，但没有按模型 token 窗口进行裁剪或摘要。
+- 当前有每轮最多 6 个工具批次、`document_read` 单份文档最多读取 80,000 字符等保护，但没有按模型 token 窗口进行裁剪或摘要。
 - 文件上传链路现支持 PDF、DOCX、TXT、Markdown、JSON：原件存于私有 R2，解析文本按约 2,500 字符分片存于 PostgreSQL。`file_content_read` 每次最多读取 5 个分片；模型收到的是附加文件的 `cache_key`，正文通过工具按需进入当前轮上下文。
 
 以上是代码现状，不代表已经测得上下文节省或重复读取的数量。

@@ -1,6 +1,6 @@
 # Database migration source
 
-`migration/V1__foundation.sql` through `V12__openrouter_model_credentials.sql` are byte-for-byte copies from `D:/Code/AgentWorkbench/backend/src/main/resources/db/migration` as of this project setup. They create the `backend_data` schema in a separate local database. The Python service will initially use only the tables required by the Web and Agent paths.
+`migration/V1__foundation.sql` through `V12__openrouter_model_credentials.sql` are snapshots of the earlier Java Backend migrations. They create the `backend_data` schema in a separate local database. The Python service uses only the tables required by its Web-compatible API and Agent paths.
 
 Login codes and Web sessions live in Redis. User accounts and login records remain in PostgreSQL. The local development database's Flyway history matches V1–V12.
 

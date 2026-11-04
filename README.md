@@ -4,6 +4,8 @@ Single-service Python prototype for learning FastAPI, LangChain, LangGraph, and 
 
 See [the phase plan](docs/phase-plan.md) for the next Web-to-Agent implementation steps.
 
+This repository contains the API and in-process Agent. The compatible Web client is maintained separately; the FastAPI OpenAPI UI at `/docs` and the included flow scripts can exercise the backend without that client. The PostgreSQL schema is a snapshot from the earlier Java project, while the Python service uses only the tables needed by this demo.
+
 ## Code layout
 
 - `app/api/v1/` owns HTTP contracts. `v1` is an internal package name; existing Web paths such as `/api/user/login` stay unchanged.
@@ -19,17 +21,26 @@ See [the phase plan](docs/phase-plan.md) for the next Web-to-Agent implementatio
 
 `app/core/responses.py` and `app/core/error_codes.py` keep the existing Web envelope `{code, data, message}`. FastAPI handles request parsing and OpenAPI documentation; `app/core/exceptions.py` converts business, validation, HTTP, and unexpected errors into that envelope. `app/schemas/pagination.py` provides the Java-compatible `current`, `pageSize`, `sortField`, `sortOrder` request and `records`, `total`, `hasNext` response. Each repository must still use an explicit allowlist before putting `sortField` into a SQL `ORDER BY`.
 
-## Setup
+## Try the code
 
-Requires Python 3.14 or newer and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.14 or newer and [uv](https://docs.astral.sh/uv/). The unit suite runs without PostgreSQL, Redis, R2, Resend, or a personal model Key. Pandoc enables the DOCX conversion test; without it, that one test is skipped.
 
 ```powershell
 uv sync --locked
+uv run pytest -q
+```
+
+## Run the API locally
+
+Start PostgreSQL and Redis first. Database initialization also needs Java and Maven on `PATH`; DOCX uploads need Pandoc on `PATH`. Copy the configuration template, then set `DECKWISE_DB_PASSWORD` and `APP_MODEL_CREDENTIAL_ENCRYPTION_KEY`. The PostgreSQL user needs permission to create the development database. The encryption key is a Base64-encoded random 32-byte value; see [the BYOK guide](docs/model-byok-catalog.md).
+
+```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+uv run python scripts/setup_db.py
 uv run uvicorn app.main:app --reload --no-access-log --log-config logging.json --loop app.db.checkpoint:selector_loop_factory
 ```
 
-Fill in `DECKWISE_DB_PASSWORD`, `APP_RESEND_API_KEY`, `APP_RESEND_FROM`, and `APP_MODEL_CREDENTIAL_ENCRYPTION_KEY` in the Git-ignored `.env` file. The last value is a Base64-encoded random 32-byte server encryption key for user-owned model API keys; see [the BYOK guide](docs/model-byok-catalog.md). The database host, port, name, user, Redis URL, logging environment, and cookie setting can be changed there too. Process environment variables take precedence. An existing `.env` with the older `DB_PASSWORD` key also works. The API is available at `http://127.0.0.1:8000/` and its OpenAPI UI at `/docs`. `scripts/run_api.ps1` remains an optional wrapper around the same Uvicorn command.
+The API is available at `http://127.0.0.1:8000/` and its OpenAPI UI at `/docs`. Email login requires Resend (`APP_RESEND_API_KEY`, `APP_RESEND_FROM`), and private uploads require Cloudflare R2 credentials. The database host, port, name, user, Redis URL, logging environment, and cookie setting can be changed in the Git-ignored `.env` file; process environment variables take precedence. An existing `.env` with the older `DB_PASSWORD` key also works. `scripts/run_api.ps1` remains an optional wrapper around the same Uvicorn command.
 
 ## PostgreSQL and Flyway
 
@@ -53,7 +64,7 @@ FastAPI implements the Web app's cookie-based email login contract:
 
 Login codes expire after five minutes and can be attempted at most five times. Resending is limited to once per minute per address. Redis stores salted code hashes and a user ID under each hashed opaque session token, with a 30-day TTL. Keys use a `deckwise-python:` prefix so they do not overlap the Java backend's keys. PostgreSQL keeps users and login records. Existing PostgreSQL-backed login cookies become invalid after this change. Set `APP_WEB_SESSION_COOKIE_SECURE=true` when serving the Web app over HTTPS.
 
-For local Web integration, point `AgentWorkbench/web/.env.local` at `API_PROXY_TARGET=http://127.0.0.1:8000`, start the Python API with the Uvicorn command above, and start the Web app with `npm run dev`. The Web app forwards `/api/user/*` requests and the session cookie through its same-origin proxy. This setup is already present in the local, Git-ignored Web `.env.local` file.
+For local Web integration with a compatible client checkout, set its `API_PROXY_TARGET=http://127.0.0.1:8000` and start that client separately. Its same-origin proxy forwards `/api/*` requests and the session cookie to this API.
 
 Two checks are available after the database has been initialized:
 
@@ -80,7 +91,7 @@ Run `uv run python scripts/check_checkin_models_flow.py` to verify these endpoin
 
 ## Document-editing Agent
 
-The Web can create a conversation with `POST /api/projects/{projectId}/create`, read its messages through `GET /api/sessions/{sessionId}/messages/after-seq`, and stream a turn through `POST /api/sessions/{sessionId}/sendRPC` (proxied by the Web as `/sse/sessions/{sessionId}/sendRPC`). `POST /api/sessions/{sessionId}/abort` stops an active local run.
+The Web can create a conversation with `POST /api/projects/{projectId}/create`, read its messages through `GET /api/sessions/{sessionId}/messages/after-seq`, and stream a turn through `POST /api/sessions/{sessionId}/sendRPC` (proxied by the Web as `/sse/sessions/{sessionId}/sendRPC`). `POST /api/sessions/{sessionId}/abort` stops an active local run. Validated file, image, and explicitly referenced document names are stored in the user message's existing JSONB metadata so the Web can show attachment chips during the turn and after refresh; signed R2 URLs are never stored there.
 
 In `AGENT` mode, a LangGraph context → model ↔ tools flow offers project-scoped file reads, `document_create`, `document_read`, `document_locate`, `document_diff`, and `document_save`. Both `ASK` and `AGENT` modes can inspect JSON uploads with `json_structure_read` and `json_subtree_read`; JSON originals are read from private R2 after a project ownership check, with a 1 MB input cap and bounded tool output. `ASK` mode exposes only read tools. Local diffs change a per-turn working copy and require `document_save` to persist; full-draft saves require `document_read`. Both save paths use the current document `version`; a concurrent edit returns `40903` without overwriting it. PostgreSQL session messages remain the Web-facing history. An optional PostgreSQL checkpointer can also retain graph state across turns; see [the checkpoint experiment](docs/checkpointer-experiment.md). The local in-memory abort registry does not coordinate across multiple API workers. The next capabilities are tracked in [the Agent roadmap](docs/agent-capabilities-roadmap.md).
 

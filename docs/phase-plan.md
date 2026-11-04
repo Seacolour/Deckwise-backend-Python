@@ -54,7 +54,7 @@
 
 从 Web 选择模型，向 Agent 发出一个文档修改请求；界面能看到流式结果，文档实际更新，刷新后对话及文档状态仍可回读。Agent 遇到无权限或版本冲突时不能静默覆盖数据。
 
-已验证：真实 DeepSeek 请求按 `document_read → document_save` 执行；FastAPI 与 Web `/sse/*` 代理均收到文本和工具事件；浏览器页面展示工具过程，文档更新为版本 2，刷新后消息与文档仍可回读。另用临时数据验证读取后发生外部更新时，旧版本工具保存返回 `40903` 且不覆盖内容。业务消息仍由 PostgreSQL 会话表保存；可开关的 LangGraph PostgreSQL checkpointer 实验见 [checkpointer-experiment.md](checkpointer-experiment.md)。后续已补文档局部编辑、JSON 读取、图片链路以及 BYOK；真实 OpenRouter 图片回答仍待用户设置个人 Key 后联调。多工作进程共享中止状态仍待评估。
+已验证：真实 DeepSeek 请求按 `document_read → document_save` 执行；FastAPI 与 Web `/sse/*` 代理均收到文本和工具事件；浏览器页面展示工具过程，文档更新为版本 2，刷新后消息与文档仍可回读。另用临时数据验证读取后发生外部更新时，旧版本工具保存返回 `40903` 且不覆盖内容。业务消息仍由 PostgreSQL 会话表保存；可开关的 LangGraph PostgreSQL checkpointer 实验见 [checkpointer-experiment.md](checkpointer-experiment.md)。后续已补文档局部编辑、JSON 读取、图片链路以及 BYOK；OpenRouter GPT-6 Luna 的工具调用和合成图片识别已单独验证，完整 Web 任务仍待观察。多工作进程共享中止状态仍待评估。
 
 ## 阶段 3：上下文管理对照实验（暂缓独立执行）
 
