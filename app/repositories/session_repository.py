@@ -36,15 +36,17 @@ def lock_session(db: Session, session_id: int) -> ConversationSession:
 
 def append_messages(
     db: Session, session_id: int, entries: list[tuple[str, str, str, str]], now: datetime,
+    metadata_by_index: list[dict | None] | None = None,
 ) -> list[SessionMessage]:
     """Append (role, type, content, status) rows under the session row lock."""
     session = lock_session(db, session_id)
     next_seq = (db.scalar(select(func.max(SessionMessage.seq)).where(SessionMessage.session_id == session_id)) or 0) + 1
     rows: list[SessionMessage] = []
-    for role, message_type, content, status in entries:
+    for index, (role, message_type, content, status) in enumerate(entries):
         row = SessionMessage(
             session_id=session_id, seq=next_seq, role=role, type=message_type,
             content=content, raw_content=content if message_type == "text" else None,
+            metadata_json=metadata_by_index[index] if metadata_by_index else None,
             status=status, created_at=now, updated_at=now, is_deleted=False,
         )
         db.add(row)

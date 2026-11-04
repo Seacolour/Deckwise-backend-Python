@@ -264,6 +264,20 @@ def main() -> None:
             assert "event: done" in streamed.text
             history = client.get(f"/api/sessions/{session_id}/messages/after-seq", headers=headers)
             assert history.status_code == 200 and len(history.json()["data"]) >= 3
+            first_user = next(item for item in history.json()["data"] if item["role"] == "user")
+            assert first_user["attachments"][0]["name"] == "long.txt"
+            assert first_user["attachments"][0]["fileId"] == text_file["sourceFileId"]
+
+            if not base_url:
+                model_service.resolve_chat_model = lambda _user_id, _model_id, _mode: ScriptedFileModel(data["files"][2]["cacheKey"])
+                docx_turn = client.post(f"/api/sessions/{session_id}/sendRPC", headers=headers, json={
+                    "message": "读取我附加的 DOCX。", "mode": "ASK", "model": "deepseek-chat",
+                    "fileCacheKeys": [data["files"][2]["cacheKey"]],
+                })
+                assert docx_turn.status_code == 200 and "event: done" in docx_turn.text, docx_turn.text[-1000:]
+                docx_history = client.get(f"/api/sessions/{session_id}/messages/after-seq", headers=headers)
+                docx_user = [item for item in docx_history.json()["data"] if item["role"] == "user"][-1]
+                assert docx_user["attachments"][0]["name"] == "sample.docx"
 
             if not base_url:
                 model_service.resolve_chat_model = lambda _user_id, _model_id, _mode: ScriptedSynthesisModel(text_file["cacheKey"])
@@ -358,6 +372,9 @@ def main() -> None:
                 assert "event: done" in image_stream.text
                 image_history = client.get(f"/api/sessions/{image_session_id}/messages/after-seq", headers=headers)
                 assert image_history.status_code == 200
+                image_user = next(item for item in image_history.json()["data"] if item["role"] == "user")
+                assert image_user["attachments"][0]["kind"] == "image"
+                assert image_user["attachments"][0]["name"] == "red.png"
                 assert "r2.cloudflarestorage.com" not in image_history.text
                 print("image flow OK: private upload, DeepSeek rejection, OpenRouter model input, history")
 

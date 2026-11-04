@@ -3,13 +3,14 @@
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import BusinessError
 from app.db.session import session_scope
 from app.models.session import ConversationSession, SessionMessage
 from app.repositories import session_repository
-from app.schemas.agent import SessionCreateRequest, SessionMessageDTO
+from app.schemas.agent import MessageAttachmentDTO, SessionCreateRequest, SessionMessageDTO
 from app.schemas.project import SessionDTO
 from app.services.project_service import require_owned_project, session_to_dto
 
@@ -32,9 +33,19 @@ def create_session(user_id: int, project_id: int, body: SessionCreateRequest) ->
 
 
 def _message_dto(row: SessionMessage) -> SessionMessageDTO:
+    metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+    raw_attachments = metadata.get("attachments", [])
+    attachments: list[MessageAttachmentDTO] = []
+    if row.role == "user" and row.type == "text" and isinstance(raw_attachments, list):
+        for item in raw_attachments[:15]:
+            try:
+                attachments.append(MessageAttachmentDTO.model_validate(item))
+            except ValidationError:
+                continue
     return SessionMessageDTO(
         id=str(row.id), seq=row.seq, role=row.role, type=row.type,
         content=row.content, rawContent=row.raw_content, status=row.status,
+        attachments=attachments,
     )
 
 
@@ -47,13 +58,17 @@ def list_messages(user_id: int, session_id: int, after_seq: int, limit: int) -> 
 
 def prepare_turn(
     user_id: int, session_id: int, text: str, *, include_history: bool = True,
+    attachments: list[MessageAttachmentDTO] | None = None,
 ) -> tuple[int, list[tuple[str, str]]]:
     now = datetime.now(timezone.utc)
     with session_scope() as db:
         session = require_owned_session(db, user_id, session_id)
         history = ([(row.role, row.content or "") for row in session_repository.recent_chat_messages(db, session_id)]
                    if include_history else [])
-        session_repository.append_messages(db, session_id, [("user", "text", text, "final")], now)
+        metadata = {"attachments": [item.model_dump(mode="json", exclude_none=True)
+                                    for item in attachments]} if attachments else None
+        session_repository.append_messages(db, session_id, [("user", "text", text, "final")], now,
+                                           metadata_by_index=[metadata])
         session.last_user_message = text[:500]
         return session.project_id, history
 

@@ -15,6 +15,7 @@ from app.core.exceptions import BusinessError
 from app.db.session import session_scope
 from app.db.checkpoint import checkpoint_thread_id
 from app.schemas.agent import UserMessageSendRequest
+from app.schemas.agent import MessageAttachmentDTO
 from app.services import document_service, file_service, model_service, session_service
 
 logger = logging.getLogger("uvicorn.error")
@@ -58,15 +59,33 @@ async def start_turn(
     with session_scope() as db:
         session = session_service.require_owned_session(db, user_id, session_id)
         project_id = session.project_id
+    attachments: list[MessageAttachmentDTO] = []
     for cache_key in body.fileCacheKeys:
-        file_service.require_project_file(user_id, project_id, cache_key)
+        row = file_service.require_project_file(user_id, project_id, cache_key)
+        if str(row["mime_type"] or "").startswith("image/"):
+            raise BusinessError(400, ErrorCode.PARAMS_ERROR, "图片请使用 imageCacheKeys 传递")
+        attachments.append(MessageAttachmentDTO(
+            kind="file", fileId=str(row["id"]), cacheKey=cache_key,
+            name=str(row["display_name"] or row["original_name"] or f"文件 {row['id']}")[:180],
+        ))
     image_urls = [file_service.image_input_url(user_id, project_id, cache_key)
                   for cache_key in body.imageCacheKeys]
+    for cache_key in body.imageCacheKeys:
+        row = file_service.require_project_file(user_id, project_id, cache_key)
+        attachments.append(MessageAttachmentDTO(
+            kind="image", fileId=str(row["id"]), cacheKey=cache_key,
+            name=str(row["display_name"] or row["original_name"] or f"图片 {row['id']}")[:180],
+        ))
     context = body.clientContext
     active_document_id = context.activeDocument.documentId if context and context.activeDocument else None
     referenced_document_ids = context.referencedDocumentIds if context else []
+    seen_document_ids: set[int] = set()
     for document_id in ([active_document_id] if active_document_id else []) + referenced_document_ids:
-        document_service.get_document(user_id, document_id, False, expected_project_id=project_id)
+        document = document_service.get_document(user_id, document_id, False, expected_project_id=project_id)
+        if document_id in referenced_document_ids and document_id not in seen_document_ids:
+            name = document.title if document.title.lower().endswith(".md") else f"{document.title}.md"
+            attachments.append(MessageAttachmentDTO(kind="document", documentId=str(document_id), name=name[:180]))
+            seen_document_ids.add(document_id)
 
     tools = tools_for_project(user_id, project_id, body.mode)
     checkpointer = getattr(request.app.state, "checkpointer", None)
@@ -82,6 +101,7 @@ async def start_turn(
     try:
         project_id, history = session_service.prepare_turn(
             user_id, session_id, message, include_history=include_history,
+            attachments=attachments,
         )
     except BaseException:
         _active_runs.pop(key, None)

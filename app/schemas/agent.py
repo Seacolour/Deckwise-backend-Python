@@ -29,6 +29,14 @@ class UserMessageSendRequest(BaseModel):
     imageCacheKeys: list[str] = Field(default_factory=list, max_length=5)
 
 
+class MessageAttachmentDTO(BaseModel):
+    kind: Literal["file", "image", "document"]
+    name: str
+    fileId: str | None = None
+    documentId: str | None = None
+    cacheKey: str | None = None
+
+
 class SessionMessageDTO(BaseModel):
     id: str
     seq: int
@@ -38,3 +46,4 @@ class SessionMessageDTO(BaseModel):
     rawContent: str | None
     status: str
     agentMessageGroupId: str | None = None
+    attachments: list[MessageAttachmentDTO] = Field(default_factory=list)
