@@ -50,6 +50,44 @@ def test_document_save_requires_a_successful_read() -> None:
     assert all(item.name != "document_save" for item in tools_for_project(1, 1, "ASK"))
 
 
+def test_semantic_search_is_only_registered_when_embeddings_are_available() -> None:
+    ordinary = {item.name for item in tools_for_project(1, 1, "ASK")}
+    enabled = {item.name for item in tools_for_project(1, 1, "ASK", semantic_search_enabled=True)}
+    assert "semantic_file_search" not in ordinary
+    assert "semantic_file_search" in enabled
+
+
+def test_agent_can_use_semantic_search_tool(monkeypatch) -> None:
+    from app.services import rag_service
+
+    async def fake_search(user_id, project_id, query, limit=3, cache_key=None):
+        assert (user_id, project_id, query, limit, cache_key) == (7, 11, "苹果", 3, None)
+        return {"matches": [{"file_name": "fruit.txt", "snippet": "苹果属于水果"}],
+                "indexed_new": 1, "total_fragments": 1}
+
+    class RagModel:
+        def bind_tools(self, tools):
+            assert "semantic_file_search" in {item.name for item in tools}
+            return self
+
+        async def ainvoke(self, messages):
+            if any(isinstance(item, ToolMessage) for item in messages):
+                return AIMessage(content="资料说明苹果属于水果。")
+            return AIMessage(content="", tool_calls=[{
+                "name": "semantic_file_search", "args": {"query": "苹果"}, "id": "rag-call",
+            }])
+
+    monkeypatch.setattr(rag_service, "search_project_files", fake_search)
+    graph = build_agent_graph(RagModel(), tools_for_project(7, 11, "ASK", semantic_search_enabled=True),
+                              "ASK", 7, 11)
+    result = asyncio.run(graph.ainvoke({
+        "messages": [HumanMessage(content="苹果是什么？")], "active_document_id": None,
+        "tool_rounds": 0,
+    }))
+    assert json.loads(result["messages"][2].content)["matches"][0]["file_name"] == "fruit.txt"
+    assert result["messages"][-1].content == "资料说明苹果属于水果。"
+
+
 def test_image_url_reaches_model_without_entering_graph_state() -> None:
     class RecordingModel:
         def __init__(self):

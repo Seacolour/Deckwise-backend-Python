@@ -4,19 +4,22 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack
 
 from fastapi import Request
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 
 from app.agent.graph import build_agent_graph
 from app.agent.tools import tools_for_project
+from app.agent.tools.notion_mcp import make_notion_read_tools
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import BusinessError
 from app.db.session import session_scope
 from app.db.checkpoint import checkpoint_thread_id
 from app.schemas.agent import UserMessageSendRequest
 from app.schemas.agent import MessageAttachmentDTO
-from app.services import document_service, file_service, model_service, session_service
+from app.services import agent_plugin_service, document_service, file_service, model_credential_service, model_service, notion_mcp_connection_service, session_service
+from app.services.notion_mcp_oauth_client import MCP_URL as NOTION_MCP_URL
 
 logger = logging.getLogger("uvicorn.error")
 _active_runs: dict[tuple[int, int], asyncio.Event] = {}
@@ -87,14 +90,22 @@ async def start_turn(
             attachments.append(MessageAttachmentDTO(kind="document", documentId=str(document_id), name=name[:180]))
             seen_document_ids.add(document_id)
 
-    tools = tools_for_project(user_id, project_id, body.mode)
+    enabled_plugins = agent_plugin_service.enabled_plugin_ids(user_id)
+    local_tools = tools_for_project(
+        user_id, project_id, body.mode,
+        semantic_search_enabled="openrouter" in model_credential_service.configured_providers(user_id),
+        docs_mcp_enabled="docs-langchain" in enabled_plugins,
+        enabled_skill_names={item.removeprefix("skill:") for item in enabled_plugins
+                             if item.startswith("skill:")},
+    )
     checkpointer = getattr(request.app.state, "checkpointer", None)
-    graph = build_agent_graph(model, tools, body.mode, user_id, project_id, checkpointer, image_urls)
     graph_config: dict = {"recursion_limit": 20}
     include_history = True
     if checkpointer is not None:
         graph_config["configurable"] = {"thread_id": checkpoint_thread_id(user_id, session_id)}
-        snapshot = await graph.aget_state(graph_config)
+        snapshot_graph = build_agent_graph(model, local_tools, body.mode, user_id, project_id,
+                                           checkpointer, image_urls)
+        snapshot = await snapshot_graph.aget_state(graph_config)
         include_history = not bool(snapshot.values.get("messages"))
     stop_event = asyncio.Event()
     _active_runs[key] = stop_event
@@ -106,6 +117,32 @@ async def start_turn(
     except BaseException:
         _active_runs.pop(key, None)
         raise
+
+    async def graph_chunks(messages: list[HumanMessage | AIMessage]) -> AsyncIterator[dict]:
+        async with AsyncExitStack() as stack:
+            run_tools = list(local_tools)
+            if "notion" in enabled_plugins and "notion" in await asyncio.to_thread(
+                agent_plugin_service.enabled_plugin_ids, user_id,
+            ):
+                from fastmcp import Client
+                from langchain.mcp import MCPAdapter
+
+                token = await asyncio.to_thread(notion_mcp_connection_service.access_token, user_id)
+                try:
+                    adapter = await stack.enter_async_context(MCPAdapter(Client(NOTION_MCP_URL, auth=token)))
+                    discovered = await adapter.list_tools()
+                except Exception as error:
+                    raise BusinessError(503, ErrorCode.SYSTEM_BUSY, "Notion MCP 暂时不可用") from error
+                run_tools.extend(make_notion_read_tools(user_id, discovered))
+            graph = build_agent_graph(model, run_tools, body.mode, user_id, project_id,
+                                      checkpointer, image_urls)
+            async for chunk in graph.astream(
+                {"messages": messages, "active_document_id": active_document_id,
+                 "referenced_document_ids": referenced_document_ids,
+                 "attached_file_keys": body.fileCacheKeys, "tool_rounds": 0},
+                stream_mode=["messages", "updates"], version="v2", config=graph_config,
+            ):
+                yield chunk
 
     async def stream() -> AsyncIterator[str]:
         events: list[tuple[str, str, str]] = []
@@ -125,13 +162,7 @@ async def start_turn(
                 events.append(("assistant", "text", delta))
 
         try:
-            async for chunk in graph.astream(
-                {"messages": messages, "active_document_id": active_document_id,
-                 "referenced_document_ids": referenced_document_ids,
-                 "attached_file_keys": body.fileCacheKeys, "tool_rounds": 0},
-                stream_mode=["messages", "updates"], version="v2",
-                config=graph_config,
-            ):
+            async for chunk in graph_chunks(messages):
                 if stop_event.is_set() or await request.is_disconnected():
                     break
                 if chunk["type"] == "messages":
@@ -185,7 +216,8 @@ async def start_turn(
             raise
         except Exception as error:
             run_status = "error"
-            error_message = "模型处理失败，请稍后重试"
+            error_message = (error.message if isinstance(error, BusinessError) and
+                             error.message.startswith("Notion") else "模型处理失败，请稍后重试")
             logger.warning("agent run failed session_id=%s exception=%s", session_id, type(error).__name__)
         finally:
             try:

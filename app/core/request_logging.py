@@ -13,7 +13,7 @@ from app.core.config import is_dev_environment
 logger = logging.getLogger("uvicorn.error")
 _REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 _MAX_BODY_BYTES = 8192
-_SENSITIVE_KEY_PARTS = ("password", "passcode", "token", "apikey", "secret", "credential", "nonce", "code")
+_SENSITIVE_KEY_PARTS = ("password", "passcode", "token", "apikey", "secret", "credential", "nonce", "code", "state")
 
 
 def _request_id(scope: Scope) -> str:

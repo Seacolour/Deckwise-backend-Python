@@ -113,3 +113,27 @@ def list_fragments(db: Session, file_id: int, start_index: int, limit: int) -> l
         LIMIT :limit
     """), {"file_id": file_id, "start_index": start_index, "limit": limit}).mappings().all()
     return [dict(row) for row in rows]
+
+
+def list_project_fragments_for_index(
+    db: Session, user_id: int, project_id: int, limit: int,
+    cache_key: str | None = None,
+) -> list[dict]:
+    """Return only currently linked text fragments from an owned project."""
+    rows = db.execute(text("""
+        SELECT f.id AS file_id, f.source_key AS cache_key,
+               COALESCE(l.display_name, f.original_name) AS file_name,
+               t.fragment_index, t.fragment_content
+        FROM backend_data.projects AS p
+        JOIN backend_data.project_file_links AS l ON l.project_id = p.id
+        JOIN backend_data.object_storage_files AS f ON f.id = l.file_id
+        JOIN backend_data.file_text_fragments AS t ON t.file_id = f.id
+        WHERE p.id = :project_id AND p.owner_id = :user_id AND p.is_deleted = false
+          AND l.is_deleted = false AND f.is_deleted = false AND f.status = 'available'
+          AND f.storage_channel = 'private' AND t.is_deleted = false
+          AND (CAST(:cache_key AS text) IS NULL OR f.source_key = :cache_key)
+        ORDER BY f.id, t.fragment_index
+        LIMIT :limit
+    """), {"user_id": user_id, "project_id": project_id,
+           "cache_key": cache_key, "limit": limit}).mappings().all()
+    return [dict(row) for row in rows]

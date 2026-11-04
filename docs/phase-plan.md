@@ -60,6 +60,9 @@
 
 文件输入前置链路已完成：Web 可上传 PDF、DOCX、TXT、Markdown 和 JSON，原件进入私有 R2，解析文本进入 PostgreSQL 分片表，Agent 可按窗口读取。当前优先按 [Agent 能力复刻路线](agent-capabilities-roadmap.md)推进文档局部编辑、JSON 局部读取和图片理解。上下文问题随这些真实任务观察，遇到窗口压力或遗忘时再使用 [context-management-experiment.md](context-management-experiment.md) 中的基线与对照方法。
 
+RAG、文档 MCP 和本地 Skill 的小型学习链路见 [rag-mcp-skills-plan.md](rag-mcp-skills-plan.md)。
+按用户授权接入 Notion MCP 的下一条学习链路见 [notion-mcp-integration-plan.md](notion-mcp-integration-plan.md)。
+
 ## 后续按需求补齐
 
 - 项目重命名与删除、文档删除及版本历史。

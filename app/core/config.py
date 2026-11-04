@@ -76,5 +76,9 @@ def redis_url() -> str:
     return (setting("DECKWISE_REDIS_URL", "redis://127.0.0.1:6379/0") or "").strip()
 
 
+def notion_mcp_redirect_uri() -> str:
+    return (setting("NOTION_MCP_REDIRECT_URI", "http://localhost:3000/oauth/notion-mcp/callback") or "").strip()
+
+
 def is_dev_environment() -> bool:
     return (setting("DECKWISE_ENV", "prod") or "prod").lower() in {"dev", "development"}

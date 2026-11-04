@@ -31,15 +31,17 @@ def test_dev_body_logs_business_fields_but_redacts_credentials(caplog, monkeypat
     with caplog.at_level(logging.INFO, logger="uvicorn.error"):
         response = TestClient(app, backend_options={"loop_factory": selector_loop_factory}).post(
             "/api/user/login",
-            json={"email": "bad-email", "code": "123456", "apiKey": "private-api-key"},
+            json={"email": "bad-email", "code": "123456", "apiKey": "private-api-key", "state": "oauth-state-value"},
         )
 
     assert response.status_code == 422
     assert '"email":"bad-email"' in caplog.text
     assert '"code":"<redacted>"' in caplog.text
     assert '"apiKey":"<redacted>"' in caplog.text
+    assert '"state":"<redacted>"' in caplog.text
     assert "123456" not in caplog.text
     assert "private-api-key" not in caplog.text
+    assert "oauth-state-value" not in caplog.text
 
 
 def test_prod_body_is_not_logged(caplog, monkeypatch) -> None:
