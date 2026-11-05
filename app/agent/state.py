@@ -11,3 +11,4 @@ class AgentState(MessagesState):
     attached_file_keys: NotRequired[list[str]]
     context_note: NotRequired[str]
     tool_rounds: NotRequired[int]
+    todos: NotRequired[list[dict[str, str]]]

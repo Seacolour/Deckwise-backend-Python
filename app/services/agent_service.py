@@ -99,7 +99,7 @@ async def start_turn(
                              if item.startswith("skill:")},
     )
     checkpointer = getattr(request.app.state, "checkpointer", None)
-    graph_config: dict = {"recursion_limit": 20}
+    graph_config: dict = {"recursion_limit": 28 if body.mode == "AGENT" else 20}
     include_history = True
     if checkpointer is not None:
         graph_config["configurable"] = {"thread_id": checkpoint_thread_id(user_id, session_id)}
@@ -139,7 +139,8 @@ async def start_turn(
             async for chunk in graph.astream(
                 {"messages": messages, "active_document_id": active_document_id,
                  "referenced_document_ids": referenced_document_ids,
-                 "attached_file_keys": body.fileCacheKeys, "tool_rounds": 0},
+                 "attached_file_keys": body.fileCacheKeys, "tool_rounds": 0,
+                 "todos": []},
                 stream_mode=["messages", "updates"], version="v2", config=graph_config,
             ):
                 yield chunk

@@ -4,10 +4,11 @@ from collections.abc import Callable, Sequence
 from typing import Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END
 from langgraph.prebuilt import ToolNode
+from langgraph.types import Command
 
 from app.agent.state import AgentState
 from app.services import document_service
@@ -48,6 +49,8 @@ def make_model_node(model: BaseChatModel, tools: Sequence[BaseTool], mode: str,
         )
         if mode == "AGENT":
             instruction += (
+                "若任务需要多个不同操作步骤，先单独调用 write_todos 列出 2–6 个具体步骤；"
+                "简单任务无需计划。工具结果确认后更新步骤状态，完成前不要把未执行的步骤标成完成。"
                 "用户要求新建文档时使用 document_create；如需根据附件创作，先用 file_content_read 阅读资料。"
                 "局部编辑时用 document_locate 找到精确原文和行号，再用 document_diff 修改工作副本，"
                 "最后调用 document_save，传入版本但省略 draft_content。"
@@ -73,6 +76,11 @@ def make_model_node(model: BaseChatModel, tools: Sequence[BaseTool], mode: str,
         if image_urls:
             instruction += "本轮附加图片已作为视觉输入提供，请根据图片实际内容回答，不要仅凭文件名推测。"
         instruction += "\n" + state.get("context_note", "")
+        if state.get("todos"):
+            instruction += "\n本轮计划：" + "；".join(
+                f"{index}. [{item['status']}] {item['content']}"
+                for index, item in enumerate(state["todos"], start=1)
+            )
         messages = list(state["messages"])
         if image_urls:
             for index in range(len(messages) - 1, -1, -1):
@@ -94,7 +102,28 @@ def make_tool_node(tools: Sequence[BaseTool]) -> Callable:
 
     async def run_tools(state: AgentState) -> dict:
         result = await tool_node.ainvoke(state)
-        return {"messages": result["messages"], "tool_rounds": state.get("tool_rounds", 0) + 1}
+        if isinstance(result, dict):
+            return {**result, "tool_rounds": state.get("tool_rounds", 0) + 1}
+        if not isinstance(result, list):
+            raise TypeError("Unexpected ToolNode output")
+        merged: dict = {"messages": [], "tool_rounds": state.get("tool_rounds", 0) + 1}
+        for item in result:
+            if isinstance(item, ToolMessage):
+                merged["messages"].append(item)
+                continue
+            if isinstance(item, Command) and item.goto:
+                raise TypeError("Unsupported ToolNode command")
+            update = item.update if isinstance(item, Command) else item
+            if not isinstance(update, dict):
+                raise TypeError("ToolNode command update must be a mapping")
+            for key, value in update.items():
+                if key == "messages":
+                    merged["messages"].extend(value)
+                elif key in merged:
+                    raise ValueError(f"Conflicting ToolNode update: {key}")
+                else:
+                    merged[key] = value
+        return merged
 
     return run_tools
 
@@ -103,7 +132,8 @@ def route_after_model(state: AgentState) -> Literal["tools", "limit", "__end__"]
     last = state["messages"][-1]
     if not isinstance(last, AIMessage) or not last.tool_calls:
         return END
-    return "tools" if state.get("tool_rounds", 0) < MAX_TOOL_ROUNDS else "limit"
+    max_rounds = 10 if state.get("todos") else MAX_TOOL_ROUNDS
+    return "tools" if state.get("tool_rounds", 0) < max_rounds else "limit"
 
 
 def limit_notice(_state: AgentState) -> dict:
