@@ -57,7 +57,12 @@ def _safe_json_body(scope: Scope, captured: bytes, truncated: bool) -> str | Non
     if truncated:
         return f"<truncated after {_MAX_BODY_BYTES} bytes>"
     try:
-        return json.dumps(_redact(json.loads(captured)), ensure_ascii=False, separators=(",", ":"))
+        body = _redact(json.loads(captured))
+        path = scope.get("path", "")
+        if (path.startswith("/api/user/memories") or path.startswith("/api/user/rules")) \
+                and isinstance(body, dict) and "content" in body:
+            body["content"] = "<redacted>"
+        return json.dumps(body, ensure_ascii=False, separators=(",", ":"))
     except (UnicodeDecodeError, ValueError, TypeError):
         return "<invalid-json>"
 

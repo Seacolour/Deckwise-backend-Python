@@ -56,6 +56,19 @@ def test_prod_body_is_not_logged(caplog, monkeypatch) -> None:
     assert "request body" not in caplog.text
 
 
+def test_dev_logs_hide_personal_memory_content(caplog, monkeypatch) -> None:
+    monkeypatch.setenv("DECKWISE_ENV", "dev")
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        response = TestClient(app, backend_options={"loop_factory": selector_loop_factory}).post(
+            "/api/user/memories",
+            json={"title": "写作偏好", "content": "private-memory-content-123"},
+        )
+    assert response.status_code == 401
+    assert '"title":"写作偏好"' in caplog.text
+    assert '"content":"<redacted>"' in caplog.text
+    assert "private-memory-content-123" not in caplog.text
+
+
 def test_validation_and_missing_routes_use_web_error_envelope() -> None:
     with TestClient(app, backend_options={"loop_factory": selector_loop_factory}) as client:
         invalid = client.post("/api/user/login", json={"email": "bad-email", "code": "123456"})

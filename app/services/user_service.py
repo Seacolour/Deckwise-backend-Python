@@ -100,6 +100,19 @@ def current_user(token: str | None) -> UserDTO:
         return to_user_dto(user)
 
 
+def update_current_user_name(user_id: int, name: str) -> UserDTO:
+    normalized = name.strip()
+    if not normalized or len(normalized) > 80:
+        raise BusinessError(400, ErrorCode.PARAMS_ERROR, "昵称无效")
+    with session_scope() as db:
+        user = user_repository.get_active_user_by_id(db, user_id)
+        if user is None:
+            raise BusinessError(404, ErrorCode.NOT_FOUND, "用户不存在")
+        user.name = normalized
+        db.flush()
+        return to_user_dto(user)
+
+
 def logout_user(token: str | None) -> None:
     if token:
         auth_redis_repository.revoke_web_session(token)
