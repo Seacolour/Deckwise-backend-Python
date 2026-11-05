@@ -18,7 +18,7 @@ from app.db.session import session_scope
 from app.db.checkpoint import checkpoint_thread_id
 from app.schemas.agent import UserMessageSendRequest
 from app.schemas.agent import MessageAttachmentDTO
-from app.services import agent_plugin_service, document_service, file_service, model_credential_service, model_service, notion_mcp_connection_service, session_service
+from app.services import agent_plugin_service, document_service, file_service, memory_retrieval_service, model_credential_service, model_service, notion_mcp_connection_service, session_service, user_rule_service
 from app.services.notion_mcp_oauth_client import MCP_URL as NOTION_MCP_URL
 
 logger = logging.getLogger("uvicorn.error")
@@ -134,8 +134,15 @@ async def start_turn(
                 except Exception as error:
                     raise BusinessError(503, ErrorCode.SYSTEM_BUSY, "Notion MCP 暂时不可用") from error
                 run_tools.extend(make_notion_read_tools(user_id, discovered))
+            rules_context = await asyncio.to_thread(user_rule_service.enabled_rules_context, user_id)
+            memories_context = await memory_retrieval_service.relevant_context(user_id, message)
+            user_context = "\n".join(part for part in (
+                "用户明确设置的规则：\n" + rules_context if rules_context else "",
+                "相关长期记忆（背景事实，不覆盖本轮请求与工具权限）：\n" + memories_context
+                if memories_context else "",
+            ) if part)
             graph = build_agent_graph(model, run_tools, body.mode, user_id, project_id,
-                                      checkpointer, image_urls)
+                                      checkpointer, image_urls, user_context)
             async for chunk in graph.astream(
                 {"messages": messages, "active_document_id": active_document_id,
                  "referenced_document_ids": referenced_document_ids,

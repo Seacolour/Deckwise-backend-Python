@@ -2,7 +2,6 @@
 
 import asyncio
 
-from langchain_openai import OpenAIEmbeddings
 from langgraph.store.base import IndexConfig
 from langgraph.store.postgres import AsyncPostgresStore
 
@@ -11,11 +10,11 @@ from app.core.exceptions import BusinessError
 from app.db.checkpoint import checkpoint_conninfo
 from app.db.session import session_scope
 from app.repositories import file_repository
-from app.services import file_service, model_credential_service
+from app.services import embedding_service, file_service
 from app.services.project_service import require_owned_project
 
-EMBEDDING_MODEL = "baai/bge-m3"
-EMBEDDING_DIMENSIONS = 1024
+EMBEDDING_MODEL = embedding_service.EMBEDDING_MODEL
+EMBEDDING_DIMENSIONS = embedding_service.EMBEDDING_DIMENSIONS
 MAX_INDEX_FRAGMENTS = 120
 MAX_QUERY_CHARS = 500
 
@@ -25,16 +24,8 @@ def _namespace(user_id: int, project_id: int) -> tuple[str, ...]:
             "file-fragments", "bge-m3-v1")
 
 
-def _embeddings(user_id: int) -> OpenAIEmbeddings:
-    key = model_credential_service.resolve_api_key(user_id, "openrouter")
-    if not key:
-        raise BusinessError(400, ErrorCode.PARAMS_ERROR,
-                            "语义检索需要先在账户设置中配置 OpenRouter API Key")
-    return OpenAIEmbeddings(
-        model=EMBEDDING_MODEL, base_url="https://openrouter.ai/api/v1",
-        api_key=key, check_embedding_ctx_length=False,
-        chunk_size=16, timeout=30, max_retries=1,
-    )
+def _embeddings(user_id: int):
+    return embedding_service.openrouter_bge_embeddings(user_id)
 
 
 async def search_project_files(

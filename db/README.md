@@ -15,4 +15,6 @@ Flyway V15 creates `user_mcp_connections` for encrypted, per-user Notion MCP OAu
 The file-upload learning path reuses the existing `object_storage_files`, `project_file_links`, and `file_text_fragments` tables from V3. It requires no new migration.
 An explicit Notion MCP page import reuses these same tables and stores the page ID/URL as source metadata. It creates a project Markdown file snapshot, not a new database table.
 
+User long-term memories reuse the V2 `user_memories` and `user_rules` tables. Their semantic index uses the existing LangGraph Store tables in `public` under a separate per-user namespace; it introduces no new Flyway migration.
+
 Do not edit applied Flyway migrations. Once the Python feature set is stable, remove unused tables with forward migrations and build a separate clean baseline for fresh installations if needed.

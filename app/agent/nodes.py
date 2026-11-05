@@ -38,7 +38,7 @@ def make_context_node(user_id: int, project_id: int) -> Callable:
 
 
 def make_model_node(model: BaseChatModel, tools: Sequence[BaseTool], mode: str,
-                    image_urls: Sequence[str] = ()) -> Callable:
+                    image_urls: Sequence[str] = (), user_context: str = "") -> Callable:
     bound_model = model.bind_tools(tools)
 
     async def call_model(state: AgentState) -> dict:
@@ -56,6 +56,11 @@ def make_model_node(model: BaseChatModel, tools: Sequence[BaseTool], mode: str,
                 "最后调用 document_save，传入版本但省略 draft_content。"
                 "也可先用 document_read 获取完整草稿，再用 document_save 提交完整的新草稿。"
                 "遇到版本冲突时重新读取后再决定是否重试，不能盲目覆盖。"
+            )
+            instruction += (
+                "用户明确要求记住稳定偏好、习惯或背景事实时，可用 manage_user_memory 保存。"
+                "只有信息在后续对话仍可能有用时才主动保存；不要保存密钥、验证码、一次性任务内容或整份文档。"
+                "修改或删除旧记忆时先确认目标 ID。"
             )
         else:
             instruction += "当前是问答模式，只读取资料并回答，不修改文档。"
@@ -76,6 +81,8 @@ def make_model_node(model: BaseChatModel, tools: Sequence[BaseTool], mode: str,
         if image_urls:
             instruction += "本轮附加图片已作为视觉输入提供，请根据图片实际内容回答，不要仅凭文件名推测。"
         instruction += "\n" + state.get("context_note", "")
+        if user_context:
+            instruction += "\n" + user_context
         if state.get("todos"):
             instruction += "\n本轮计划：" + "；".join(
                 f"{index}. [{item['status']}] {item['content']}"

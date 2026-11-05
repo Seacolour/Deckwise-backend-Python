@@ -18,10 +18,11 @@ def build_agent_graph(
     user_id: int, project_id: int,
     checkpointer: BaseCheckpointSaver | None = None,
     image_urls: Sequence[str] = (),
+    user_context: str = "",
 ):
     builder = StateGraph(AgentState)
     builder.add_node("context", make_context_node(user_id, project_id))
-    builder.add_node("model", make_model_node(model, tools, mode, image_urls))
+    builder.add_node("model", make_model_node(model, tools, mode, image_urls, user_context))
     builder.add_node("tools", make_tool_node(tools))
     builder.add_node("limit", limit_notice)
     builder.add_edge(START, "context")

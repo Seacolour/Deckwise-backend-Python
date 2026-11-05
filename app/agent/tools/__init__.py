@@ -16,6 +16,7 @@ from app.agent.tools.semantic_file_search import make_semantic_file_search_tool
 from app.agent.tools.langchain_docs_search import make_langchain_docs_search_tool
 from app.agent.tools.skills import make_skill_tools
 from app.agent.tools.write_todos import write_todos
+from app.agent.tools.user_memory import make_manage_user_memory_tool
 
 
 def tools_for_project(user_id: int, project_id: int, mode: str,
@@ -35,6 +36,7 @@ def tools_for_project(user_id: int, project_id: int, mode: str,
     if mode == "AGENT":
         tools.extend([
             write_todos,
+            make_manage_user_memory_tool(user_id),
             make_document_create_tool(user_id, project_id),
             make_document_locate_tool(user_id, project_id, edit_sessions),
             make_document_diff_tool(edit_sessions),

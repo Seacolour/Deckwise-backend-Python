@@ -63,6 +63,7 @@
 RAG、文档 MCP 和本地 Skill 的小型学习链路见 [rag-mcp-skills-plan.md](rag-mcp-skills-plan.md)。
 按用户授权接入 Notion MCP 的下一条学习链路见 [notion-mcp-integration-plan.md](notion-mcp-integration-plan.md)。
 基础任务规划的 Todo 列表实现与验收见 [task-planning-basic.md](task-planning-basic.md)。
+用户画像与 Store 语义长期记忆的扩展见 [user-long-term-memory-plan.md](user-long-term-memory-plan.md)。
 
 ## 后续按需求补齐
 
