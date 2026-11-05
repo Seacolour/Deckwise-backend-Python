@@ -49,5 +49,6 @@ class ProjectFileDTO(BaseModel):
     addedAt: str
     documentId: str | None = None
     sourceId: str | None = None
+    sourceType: str | None = None
     sizeBytes: int | None = None
     objectKey: str | None = None

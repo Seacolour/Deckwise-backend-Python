@@ -45,7 +45,11 @@ def _upload_item(
     )
 
 
-def upload_one(user_id: int, project_id: int, file: UploadFile) -> FileUploadItemDTO:
+def upload_one(user_id: int, project_id: int, file: UploadFile, *,
+               source_type: str = "bytes", source_id: str | None = None,
+               source_url: str | None = None) -> FileUploadItemDTO:
+    if source_type not in {"bytes", "notion"} or (source_type == "notion" and not source_id):
+        raise BusinessError(400, ErrorCode.PARAMS_ERROR, "文件来源无效")
     with session_scope() as db:
         require_owned_project(db, user_id, project_id)
     name = safe_filename(file.filename)
@@ -56,10 +60,12 @@ def upload_one(user_id: int, project_id: int, file: UploadFile) -> FileUploadIte
         raise BusinessError(413, ErrorCode.PARAMS_ERROR,
                             "图片不能超过 8 MB" if byte_limit == MAX_IMAGE_BYTES else "文件不能超过 50 MB")
     parsed = parse_file(name, data)
-    cache_key = hashlib.sha256(data).hexdigest()
+    cache_key = hashlib.sha256(
+        (f"notion:{source_id}:".encode() if source_type == "notion" else b"") + data,
+    ).hexdigest()
     with session_scope() as db:
         require_owned_project(db, user_id, project_id)
-        existing = file_repository.find_existing_file(db, user_id, cache_key)
+        existing = file_repository.find_existing_file(db, user_id, cache_key, source_type)
         if existing:
             file_repository.attach_file(db, project_id, existing["id"], user_id, name)
             if parsed.fragments and file_repository.count_fragments(db, existing["id"]) == 0:
@@ -83,6 +89,7 @@ def upload_one(user_id: int, project_id: int, file: UploadFile) -> FileUploadIte
                 "pypandoc" if parsed.extension == ".docx" else "pypdf" if parsed.extension == ".pdf"
                 else "image" if not parsed.fragments else "utf-8",
                 etag,
+                source_type=source_type, source_id=source_id, source_url=source_url,
             )
             if parsed.fragments:
                 file_repository.insert_fragments(db, file_id, parsed.fragments, parsed.extension)

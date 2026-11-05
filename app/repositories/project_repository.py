@@ -91,7 +91,7 @@ def list_project_files(db: Session, project_id: int) -> list[dict[str, object]]:
     rows = db.execute(text("""
         SELECT f.id, l.project_id, f.source_key AS cache_key,
                COALESCE(NULLIF(l.display_name, ''), NULLIF(f.original_name, ''), '文件 ' || f.id::text) AS file_name,
-               l.created_at AS added_at, f.source_id, f.size_bytes, f.object_key,
+               l.created_at AS added_at, f.source_id, f.source_type, f.size_bytes, f.object_key,
                d.id AS document_id
         FROM backend_data.project_file_links AS l
         JOIN backend_data.object_storage_files AS f ON f.id = l.file_id

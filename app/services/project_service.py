@@ -83,5 +83,6 @@ def list_project_files(user_id: int, project_id: int) -> list[ProjectFileDTO]:
             cacheKey=str(row["cache_key"]), fileName=str(row["file_name"]),
             addedAt=row["added_at"].isoformat(),
             documentId=str(row["document_id"]) if row["document_id"] is not None else None,
-            sourceId=row["source_id"], sizeBytes=row["size_bytes"], objectKey=row["object_key"],
+            sourceId=row["source_id"], sourceType=row["source_type"],
+            sizeBytes=row["size_bytes"], objectKey=row["object_key"],
         ) for row in rows]

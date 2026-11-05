@@ -13,5 +13,6 @@ Flyway V14 creates `user_agent_plugin_settings`, which stores per-user switches 
 Flyway V15 creates `user_mcp_connections` for encrypted, per-user Notion MCP OAuth credentials and connection status. It is separate from the V14 plugin switch. The existing project encryption key is domain-separated for MCP credentials; Notion callback state and PKCE verifiers have a short Redis TTL.
 
 The file-upload learning path reuses the existing `object_storage_files`, `project_file_links`, and `file_text_fragments` tables from V3. It requires no new migration.
+An explicit Notion MCP page import reuses these same tables and stores the page ID/URL as source metadata. It creates a project Markdown file snapshot, not a new database table.
 
 Do not edit applied Flyway migrations. Once the Python feature set is stable, remove unused tables with forward migrations and build a separate clean baseline for fresh installations if needed.
